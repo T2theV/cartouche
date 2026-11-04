@@ -80,7 +80,14 @@ var catalog := CatalogSummary.new({})
 ## The library's revision, as the latest answer told it: one more at each write of the plugin.
 var library_revision := 0
 
-var _plugin: Object = Engine.get_singleton(_SINGLETON) if Engine.has_singleton(_SINGLETON) else DesktopPlugin.new()
+var _plugin: Object = Engine.get_singleton(_SINGLETON) if Engine.has_singleton(_SINGLETON) else _initial_plugin()
+
+static func _initial_plugin():
+	# On a Linux desktop the Android plugin is absent: [LinuxPlugin] stands in, scanning a real
+	# folder of game files (the demo's when there are none).
+	if OS.get_name() == "Linux":
+		return LinuxPlugin.new()
+	return DesktopPlugin.new()
 var _last_request_id := 0
 ## The system's font list, read on a worker while the main scene loads (nothing shapes text before the
 ## tree starts): read on first need instead, by the first text with a letter its font lacks, such as a
