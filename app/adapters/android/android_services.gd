@@ -82,7 +82,7 @@ var library_revision := 0
 
 var _plugin: Object = Engine.get_singleton(_SINGLETON) if Engine.has_singleton(_SINGLETON) else _initial_plugin()
 
-static func _initial_plugin():
+static func _initial_plugin() -> Object:
 	# On a Linux desktop the Android plugin is absent: [LinuxPlugin] stands in, scanning a real
 	# folder of game files (the demo's when there are none).
 	if OS.get_name() == "Linux":
