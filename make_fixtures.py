@@ -8,7 +8,9 @@
 - a PS2 disc as a MAME v5 CHD (sixteen stored 1 MiB hunks, `lzma` named, the
   shape the core's own test fixtures write) and a PSX disc as a plain ISO 9660
   image, whose SYSTEM.CNF boots a serial the reference lists write;
-- a file too small to be a game, and one no platform lists.
+- a file too small to be a game, and one no platform lists, and, under folders named for
+  platforms, a Dreamcast CHD and a GameCube RVZ (the folder, not the extension, is the
+  platform) and a bios under a folder no platform names (not a game).
 
 The formats are the core's ground truth (kotlin/core's files package): the
 iNES header's sixteen bytes are not in the NES print, a copier's 512-byte
@@ -455,6 +457,19 @@ def main() -> int:
     # -- the not-games -------------------------------------------------------
     (ROMS / "too_small.nes").write_bytes(bytes(100))
     (ROMS / "readme.txt").write_text("Cartouche (Linux) fixtures: the files this test scans.\n")
+
+    # -- the folders: the folder is the platform ----------------------------
+    (ROMS / "dreamcast").mkdir(exist_ok=True)
+    (ROMS / "dreamcast" / "Sonic Adventure (USA).chd").write_bytes(
+        b"not a MAME CHD: the folder, not the extension, is the platform")
+    (ROMS / "gc").mkdir(exist_ok=True)
+    rvz_path = ROMS / "gc" / "F-Zero GX (USA).rvz"
+    with rvz_path.open("wb") as rvz:
+        rvz.write(b"RVZ\x01\x01")
+        rvz.seek(CHD_IMAGE_SIZE)
+        rvz.write(b"\x00")
+    (ROMS / "bios").mkdir(exist_ok=True)
+    (ROMS / "bios" / "BIOS.bin").write_bytes(b"\x00")
 
     for path in sorted(ROMS.iterdir(), key=lambda p: p.name):
         if path.is_file():

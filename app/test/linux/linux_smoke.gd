@@ -12,7 +12,9 @@ extends Node
 ## copier header not in its print), a zipped Super Mario Bros ROM (its print the CRC its archive
 ## records), a Final Fantasy X PS2 disc as a MAME v5 CHD (its serial in the PS2 titles), and a
 ## Final Fantasy VII PSX disc as a plain ISO (its serial in the PSX titles); beside them a file
-## too small to be a game and one no platform lists.
+## too small to be a game and one no platform lists, and, under folders named for platforms, a
+## Dreamcast CHD and a GameCube RVZ (the folder, not the extension, is the platform) and a bios
+## under a folder no platform names (not a game).
 
 var _failures := 0
 
@@ -33,10 +35,10 @@ func _ready() -> void:
 	var library_holds_games: bool = library is Dictionary and not library.is_empty()
 	_check(library_holds_games, "library is JSON")
 	var games: Array = library.get("games", [])
-	_check(games.size() == 5, "5 games found, got %d" % games.size())
+	_check(games.size() == 7, "7 games found, got %d" % games.size())
 	var shelves_found: Dictionary = library.get("shelves", {})
 	var shelves: Array = shelves_found.get("shelves", [])
-	_check(shelves.size() == 4, "4 shelves, got %d" % shelves.size())
+	_check(shelves.size() == 6, "6 shelves, got %d" % shelves.size())
 	var by_title := {}
 	for game: Dictionary in games:
 		var game_title: String = str(game["title"])
@@ -71,6 +73,12 @@ func _ready() -> void:
 	_check("SCES_008.67" in ffx7_serials, "FFVII serial SCES_008.67 read from its ISO, got %s" % str(ffx7_serials))
 	var ffx7_identified: bool = ffx7.get("identified", false)
 	_check(ffx7_identified, "FFVII identified by its serial")
+	var sa: Dictionary = by_title.get("Sonic Adventure (USA)", {})
+	var sa_platform: String = str(sa.get("platform_id", ""))
+	_check(sa_platform == "dreamcast", "the folder makes it a dreamcast game, got %s" % sa_platform)
+	var fzero: Dictionary = by_title.get("F-Zero GX", {})
+	var fzero_platform: String = str(fzero.get("platform_id", ""))
+	_check(fzero_platform == "gc", "the folder makes it a gc game, got %s" % fzero_platform)
 
 	# -- the set-aside files ----------------------------------------------------
 	var not_games: Dictionary = library.get("not_games", {})
@@ -80,7 +88,7 @@ func _ready() -> void:
 	var counts: Dictionary = ignored.get("*", {})
 	var unsupported: Dictionary = counts.get("unsupported", {})
 	var unsupported_count: int = unsupported.get("count", 0)
-	_check(unsupported_count == 1, "readme.txt is the only unsupported file, got %d" % unsupported_count)
+	_check(unsupported_count == 2, "readme.txt and the bios are the unsupported files, got %d" % unsupported_count)
 
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})

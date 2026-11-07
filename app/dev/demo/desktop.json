@@ -104,6 +104,12 @@
                 "medium": "ps2_dvd"
             },
             {
+                "id": "ps3",
+                "name": "Sony PlayStation 3",
+                "media": "dvd",
+                "medium": "ps3_dvd"
+            },
+            {
                 "id": "psvita",
                 "name": "Sony PS Vita",
                 "media": "cartridge",
@@ -218,6 +224,12 @@
                 "model": "PlayStation 2",
                 "maker": "Sony",
                 "coming": false
+            },
+            {
+                "id": "ps3",
+                "model": "PlayStation 3",
+                "maker": "Sony",
+                "coming": true
             },
             {
                 "id": "psvita",

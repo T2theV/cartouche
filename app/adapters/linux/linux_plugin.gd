@@ -20,10 +20,14 @@ extends DesktopPlugin
 ##    writes it and `SLES-52495` as they do are one);
 ## 3. by the file's name against the platform's titles.
 ##
-## A file is a game of the first platform, in [constant _ORDER], that lists its extension and
-## whose minimum size (`res://data/platforms/profiles.json`) the file reaches; below every
-## candidate's minimum it is a `not_games` of the first candidate; with no candidate at all it is
-## ignored (`unsupported`).
+## A file under a folder named for a platform is a game of that platform when the platform
+## lists the file's extension; a file beside any folder (or under a folder no platform names,
+## which holds bios and backups, not games) is a game of the first platform, in [constant
+## _ORDER], that lists the extension and whose minimum size
+## (`res://data/platforms/profiles.json`) the file reaches, a zip's as its member's. Below every
+## candidate's minimum it is a `not_games` of the first candidate; with no candidate at all it
+## is ignored (`unsupported`), as is a file under a platform folder the platform does not list
+## (a media cache, a game folder's bindings, a bios).
 
 ## The launch was rehearsed: nothing was started; [param report] is what would have run.
 signal launch_reported(report: Dictionary)
@@ -31,10 +35,11 @@ signal launch_reported(report: Dictionary)
 const _PROFILES := "res://data/platforms/profiles.json"
 const _TITLES := "res://data/titles"
 const _PRINTS := "res://data/prints"
-## The order an ambiguous file (several platforms list its extension) resolves to, most probable
-## first: the disc images of the biggest consoles, then the cartridges, most specific last.
+## The order an ambiguous file beside the folder (several platforms list its extension)
+## resolves to, most probable first: the disc images of the biggest consoles, then the
+## cartridges, most specific last.
 const _ORDER: Array[String] = ["ps2", "psx", "xbox360", "xbox", "wii", "gc", "n64", "snes", "nes",
-	"gbc", "gb", "gba"]
+	"gbc", "gb", "gba", "ps3", "dreamcast"]
 ## The extensions of each platform's players, as the Daijishō definitions list them
 ## (`res://data/platforms/daijishou/`); a cartridge may arrive zipped, in which case its print is
 ## the CRC the archive records.
@@ -47,12 +52,14 @@ const _EXTENSIONS: Dictionary = {
 	"gba": ["gba", "srd", "zip"],
 	"psx": ["cue", "ccd", "chd", "iso", "img", "mdf", "nrg", "cvg", "bin", "pbp"],
 	"ps2": ["chd", "iso", "img", "mdf", "nrg", "bin", "cso", "elf", "isz", "gz"],
-	"gc": ["gcm", "rvc", "d64", "gcz", "wia", "gcp", "dlo"],
-	"wii": ["wia", "wii", "wdb", "rvl"],
+	"ps3": ["iso"],
+	"dreamcast": ["iso", "chd", "gd", "cdi", "cue", "img", "mdf", "bin"],
+	"gc": ["gcm", "rvc", "d64", "gcz", "wia", "gcp", "dlo", "rvz"],
+	"wii": ["wia", "wii", "wdb", "rvl", "rvz", "wbfs"],
 	"xbox": ["iso", "chd", "ciso", "xiso", "xch", "xic", "xis", "nrg", "cvg", "xcd",
 		"ziso", "dch", "wch", "gch"],
 	"xbox360": ["iso", "chd", "ciso", "xch", "xic", "xis", "nrg", "cvg", "ziso", "dch",
-		"wch", "gch"],
+		"wch", "gch", "zar"],
 }
 ## What a launch would run, per platform, %s being the file; the honest answer where Linux has
 ## no common emulator.
@@ -65,6 +72,8 @@ const _COMMANDS: Dictionary = {
 	"gba": "retroarch %s",
 	"psx": "retroarch %s",
 	"ps2": "pcsx2 %s",
+	"ps3": "rpcs3 %s",
+	"dreamcast": "kega_fusion %s",
 	"gc": "dolphin-qt %s",
 	"wii": "dolphin-qt %s",
 	"xbox": "%s  # no common Linux emulator: the file is shown only",
@@ -140,9 +149,10 @@ static func command_for(platform_id: String, file: String) -> String:
 	return template % file
 
 
-## The platform of [param ext] and [param size]: the first of [constant _ORDER] that lists the
-## extension and whose minimum the file reaches; none when no platform lists it; the first
-## candidate when the file is below every candidate's minimum (a `not_games` of it).
+## The platform of a file beside the folder, by [param ext] and [param size]: the first of
+## [constant _ORDER] that lists the extension and whose minimum the file reaches; none when no
+## platform lists it; the first candidate when the file is below every candidate's minimum
+## (a `not_games` of it).
 static func platform_of(ext: String, size: int, min_bytes: Dictionary) -> String:
 	var candidates: Array = []
 	for platform_id: String in _EXTENSIONS:
@@ -413,12 +423,28 @@ func _build_library() -> Dictionary:
 		var name: String = entry["name"]
 		var size: int = entry["size"]
 		var ext: String = name.get_extension().to_lower()
-		# A zip's platform is its member's: the archive's ROM, not the wrapper, is the game.
-		if ext == "zip":
-			var member: String = _zip_member_ext(str(entry["path"]))
-			if not member.is_empty():
-				ext = member
-		var platform_id: String = platform_of(ext, size, _min_bytes)
+		# The folder is the platform: the library keeps one folder per console, and the files a
+		# platform does not list under its folder (a bios, a backup, a media cache) are not
+		# games. Beside the folder, the extension and the size decide, a zip's as its member's,
+		# the archive's ROM, not the wrapper, being the game.
+		var platform_id := ""
+		var rel_path: String = str(entry["rel"])
+		var slash: int = rel_path.find("/")
+		if slash >= 0:
+			var folder: String = rel_path.substr(0, slash).to_lower()
+			if folder in _EXTENSIONS:
+				if ext == "zip":
+					var member: String = _zip_member_ext(str(entry["path"]))
+					if not member.is_empty():
+						ext = member
+				if ext in _EXTENSIONS[folder]:
+					platform_id = folder
+		else:
+			if ext == "zip":
+				var member: String = _zip_member_ext(str(entry["path"]))
+				if not member.is_empty():
+					ext = member
+			platform_id = platform_of(ext, size, _min_bytes)
 		if platform_id.is_empty():
 			unsupported.append(name)
 			continue
@@ -606,7 +632,7 @@ func _game_of(group: Dictionary, index: int) -> Dictionary:
 ## iNES and copier headers not in it, a zip's as its archive records it; empty on a disc,
 ## where the serial, not a print, is what identifies it.
 static func _print_of(platform_id: String, entry: Dictionary) -> String:
-	if platform_id in ["ps2", "psx", "wii", "gc", "xbox", "xbox360"]:
+	if platform_id in ["ps2", "psx", "wii", "gc", "xbox", "xbox360", "ps3", "dreamcast"]:
 		return ""
 	var ext: String = str(entry["name"]).get_extension().to_lower()
 	var file := FileAccess.open(str(entry["path"]), FileAccess.READ)
@@ -721,7 +747,7 @@ static func _chd_serials(path: String) -> Array:
 ## The CHD header of [param entry], when it is a MAME v5 CHD: its version, its hunks, their
 ## size, the image's logical size; none otherwise.
 static func _chd_header(platform_id: String, entry: Dictionary) -> Variant:
-	if platform_id not in ["ps2", "psx", "xbox", "xbox360"]:
+	if platform_id not in ["ps2", "psx", "xbox", "xbox360", "dreamcast"]:
 		return null
 	var ext: String = str(entry["name"]).get_extension().to_lower()
 	var file_size: int = entry["size"]
