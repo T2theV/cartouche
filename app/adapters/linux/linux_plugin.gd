@@ -1393,14 +1393,15 @@ static func _alnum(text: String) -> String:
 
 
 static func _normalize(text: String) -> String:
-	var re := RegEx.new()
-	re.compile("\\s+")
-	var t := re.sub(text.strip_edges(), " ", true).to_lower()
 	# The subtitle's separators mean one thing in every listing: the reference lists' ` - `,
-	# LaunchBox's `:`, and the bare space it sometimes leaves; the keys compare without them.
+	# LaunchBox's `:`, and the bare space it sometimes leaves; the keys compare without them,
+	# and the spaces they leave behind are re-joined, so the collapse follows the cut.
 	var sep := RegEx.new()
 	sep.compile("[-:]")
-	return sep.sub(t, "", true)
+	var t := sep.sub(text.strip_edges(), "", true).to_lower()
+	var re := RegEx.new()
+	re.compile("\\s+")
+	return re.sub(t, " ", true)
 
 
 ## [param name] without its trailing ` (region)` and ` (disc N)` tags, as the user reads it.
