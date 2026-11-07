@@ -164,6 +164,9 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   game rehearsed or run as the conf says, prints the report, and quits with the launch's
   code (0 for `linux_launched` and rehearsed `linux_printed`, 1 otherwise): the container's
   way to run a game headless or through the display server.
+- `--list` (after `--`, a bare flag): the library's terminal report — one line per game,
+  `id  platform  identified  title` — then quits (0). The console's way to see what the
+  scan holds without a display.
 - The conf's `{file.path}` stands unquoted in the template and the report; the command line
   for `sh` quotes it (and a spaced binary), so a spaced path arrives at the emulator as one
   argument.
@@ -172,9 +175,10 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
 
 1. **Compressed CHD serials**: `cdlz` (zlib) hunks decode to nothing (no Zlib in Godot
    4.7.2); stored hunks only. Identification then falls to serial/name for those discs.
-2. **7z archives**: `/ROMs/n64/*.7z` (San Francisco Rush - Extreme Racing) are set aside;
-   no 7z decoder in Godot 4.7.2, and its layout is not the zip's. The cartridge-print
-   identification path is unaffected for anything extracted.
+2. **7z archives**: `/ROMs/n64` holds 25 `.7z` archives (the N64 shelf's 4 detected games are
+   the folder's zips; each 7z is one more ROM, set aside); no 7z decoder in Godot 4.7.2, and
+   its layout is not the zip's. The cartridge-print identification path is unaffected for
+   anything extracted.
 
 ## Design notes
 
@@ -182,6 +186,10 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   header skipped; zip = the CRC its central directory records) → disc **serial** (alnum key,
   case/separator-insensitive: `SLES_524.95` ≡ `SLES-52495`) → **name** (normalized title in
   `data/titles/<id>.tsv`).
+- The normalized title compares without separators: the reference lists' ` - `, LaunchBox's
+  `:`, and the bare space it sometimes leaves all mean the subtitle's break, so the keys of
+  `Star Wars - X`, `Star Wars: X` and `Star Wars X` are one. (Both sides of every name match
+  pass the same normalize: titles, prints, art indexes, alternates, zip members.)
 - Platform = the folder a file sits in, when that folder is a platform (the library keeps
   one folder per console; the platform must also list the file's extension — media caches,
   `.ps3` game folders, bios, 7z and xbe bindings stay set aside). A file beside any folder
