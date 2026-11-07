@@ -61,23 +61,23 @@ const _EXTENSIONS: Dictionary = {
 	"xbox360": ["iso", "chd", "ciso", "xch", "xic", "xis", "nrg", "cvg", "ziso", "dch",
 		"wch", "gch", "zar"],
 }
-## What a launch would run, per platform, %s being the file; the honest answer where Linux has
-## no common emulator.
+## What a launch would run, per platform, `{file.path}` being the file: the rehearsal where the
+## conf lists no player for the platform; the honest answer where Linux has no common emulator.
 const _COMMANDS: Dictionary = {
-	"nes": "retroarch %s",
-	"snes": "retroarch %s",
-	"n64": "retroarch %s",
-	"gb": "retroarch %s",
-	"gbc": "retroarch %s",
-	"gba": "retroarch %s",
-	"psx": "retroarch %s",
-	"ps2": "pcsx2 %s",
-	"ps3": "rpcs3 %s",
-	"dreamcast": "kega_fusion %s",
-	"gc": "dolphin-qt %s",
-	"wii": "dolphin-qt %s",
-	"xbox": "%s  # no common Linux emulator: the file is shown only",
-	"xbox360": "%s  # no common Linux emulator: the file is shown only",
+	"nes": "retroarch {file.path}",
+	"snes": "retroarch {file.path}",
+	"n64": "retroarch {file.path}",
+	"gb": "retroarch {file.path}",
+	"gbc": "retroarch {file.path}",
+	"gba": "retroarch {file.path}",
+	"psx": "retroarch {file.path}",
+	"ps2": "pcsx2 {file.path}",
+	"ps3": "rpcs3 {file.path}",
+	"dreamcast": "kega_fusion {file.path}",
+	"gc": "dolphin-qt {file.path}",
+	"wii": "dolphin-qt {file.path}",
+	"xbox": "{file.path}  # no common Linux emulator: the file is shown only",
+	"xbox360": "{file.path}  # no common Linux emulator: the file is shown only",
 }
 ## How deep the walk goes, and how many files it holds: past either, the folder is too much.
 const _MAX_DEPTH := 12
@@ -112,6 +112,15 @@ static var _title_lists: Dictionary = {}
 static var _print_lists: Dictionary = {}
 static var _serial_index: Dictionary = {}
 static var _crc_table: PackedInt32Array = []
+static var _config_override := ""
+static var _config_path := ""
+static var _config_resolved := false
+static var _config_text := ""
+static var _config_parsed := false
+static var _players: Dictionary = {}
+static var _aliases: Dictionary = {}
+static var _extra_dirs: Array = []
+static var _rehearsal := true
 
 
 ## `--option=value` among the launch arguments, whatever the build: the demo arguments go through
@@ -143,10 +152,219 @@ static func set_games_dir(dir: String) -> void:
 	_dir_override = dir
 
 
-## The launch would have run this command on the file, %s filled.
+## Where the launch config stands: `--config=PATH` among the arguments, the `CARTOUCHE_CONFIG`
+## environment, `cartouche.conf` beside the executable, or `cartouche.conf` beside the working
+## directory; empty when it stands nowhere (then the launch rehearses the fallback command).
+## The conf, a `cartouche.conf`: the top-level keys `rehearsal` (true or false; the rehearsal
+## until told otherwise), `path` (colon-separated dirs the player binaries are looked in, before
+## the system `PATH`) and `alias.NAME = PATH` (the binary `NAME` stands at `PATH`); then, per
+## platform section, the players in priority order, a player its command line, the `{file.path}`
+## placeholder for the game file, and, for a player, its `accept` regular expression, matched
+## against the file name (none, it accepts every file of the platform), and its `stop_first`,
+## the lingering instances of the emulator stopped before the start (it would resume the
+## previous game).
+static func config_path() -> String:
+	if _config_resolved:
+		return _config_path
+	_config_resolved = true
+	var source := ""
+	var given := argument("config")
+	if not given.is_empty():
+		source = given
+	elif not _config_override.is_empty():
+		source = _config_override
+	else:
+		var env := OS.get_environment("CARTOUCHE_CONFIG")
+		if env:
+			source = env
+		else:
+			var beside_executable := OS.get_executable_path().get_base_dir().path_join("cartouche.conf")
+			if FileAccess.file_exists(beside_executable):
+				source = beside_executable
+			elif FileAccess.file_exists("cartouche.conf"):
+				source = "cartouche.conf"
+	_config_path = source
+	if not source.is_empty():
+		if FileAccess.file_exists(source):
+			_config_text = FileAccess.get_file_as_string(source)
+		else:
+			print("Cartouche config: %s does not exist: no player is installed" % source)
+	return _config_path
+
+
+## Tests: the launch config stands at [param path] instead of the usual place.
+static func set_config(path: String) -> void:
+	_config_override = path
+	_reset_config()
+
+
+static func _reset_config() -> void:
+	_config_path = ""
+	_config_resolved = false
+	_config_text = ""
+	_config_parsed = false
+	_players = {}
+	_aliases = {}
+	_extra_dirs = []
+	_rehearsal = true
+
+
+## The conf, parsed once: the rehearsal, the `path` dirs and the `alias`es on top, then, per
+## platform section, the players, in order, each with its `accept` and `stop_first`.
+static func _parse_config() -> void:
+	if _config_parsed:
+		return
+	_config_parsed = true
+	var section := ""
+	for raw_line: String in _config_text.split("\n"):
+		var line: String = raw_line.strip_edges()
+		if line.is_empty() or line.begins_with("#"):
+			continue
+		if line.begins_with("[") and line.ends_with("]"):
+			section = line.substr(1, line.length() - 2).strip_edges()
+			continue
+		var at := line.find("=")
+		if at < 0:
+			print("Cartouche config: a line without '=' is ignored: %s" % line)
+			continue
+		var key: String = line.substr(0, at).strip_edges()
+		var value: String = line.substr(at + 1).strip_edges()
+		if section.is_empty():
+			_global_key(key, value)
+		else:
+			_player_key(section, key, value)
+
+
+static func _global_key(key: String, value: String) -> void:
+	if key == "rehearsal":
+		var rehearsal_value: Variant = _bool_of(value)
+		if rehearsal_value != null:
+			_rehearsal = rehearsal_value == true
+		else:
+			print("Cartouche config: rehearsal must be true or false, got: %s" % value)
+	elif key == "path":
+		_extra_dirs = []
+		for dir: String in value.split(":"):
+			var trimmed: String = dir.strip_edges()
+			if not trimmed.is_empty():
+				_extra_dirs.append(trimmed)
+	elif key.begins_with("alias."):
+		_aliases[key.trim_prefix("alias.")] = value
+	else:
+		print("Cartouche config: an unknown key is ignored: %s" % key)
+
+
+static func _player_key(platform_id: String, key: String, value: String) -> void:
+	var players: Array = _players.get(platform_id, [])
+	var dot := key.find(".")
+	if dot < 0:
+		var exists := false
+		for player: Dictionary in players:
+			if str(player["name"]) == key:
+				exists = true
+				break
+		if exists:
+			print("Cartouche config: the player %s of %s is listed twice; the first wins" % [key, platform_id])
+			return
+		players.append({"name": key, "command": value, "binary_token": _binary_token(value),
+			"accept": null, "broken": false, "stop_first": false})
+		_players[platform_id] = players
+		return
+	var player_name: String = key.substr(0, dot)
+	var property: String = key.substr(dot + 1)
+	var player := _find_player(players, player_name)
+	if player.is_empty():
+		print("Cartouche config: %s has no player %s (list the player first); ignored" % [platform_id, player_name])
+		return
+	if property == "accept":
+		var pattern := RegEx.new()
+		if pattern.compile(value) != OK:
+			player["broken"] = true
+			print("Cartouche config: the %s accept of %s is not a regular expression and the player is disabled" % [player_name, platform_id])
+		else:
+			player["accept"] = pattern
+	elif property == "stop_first":
+		var stop_value: Variant = _bool_of(value)
+		if stop_value != null:
+			player["stop_first"] = stop_value == true
+		else:
+			print("Cartouche config: %s.stop_first must be true or false, got: %s" % [player_name, value])
+	else:
+		print("Cartouche config: an unknown property of %s is ignored: %s" % [player_name, key])
+
+
+static func _find_player(players: Array, name: String) -> Dictionary:
+	for player: Dictionary in players:
+		if str(player["name"]) == name:
+			return player
+	return {}
+
+
+static func _bool_of(value: String) -> Variant:
+	var lower: String = value.to_lower()
+	if lower in ["true", "1", "yes"]:
+		return true
+	if lower in ["false", "0", "no"]:
+		return false
+	return null
+
+
+## Where [param name] stands: its `alias` in the conf, else in the conf's `path` dirs, else in
+## the system `PATH`; empty when it stands nowhere (the player is then not installed).
+static func binary_at(name: String) -> String:
+	var aliased: String = str(_aliases.get(name, ""))
+	if not aliased.is_empty():
+		return aliased if FileAccess.file_exists(aliased) else ""
+	for dir: String in _extra_dirs:
+		var in_dirs: String = dir.path_join(name)
+		if FileAccess.file_exists(in_dirs):
+			return in_dirs
+	for dir: String in OS.get_environment("PATH").split(":"):
+		if dir.is_empty():
+			continue
+		var in_path: String = dir.path_join(name)
+		if FileAccess.file_exists(in_path):
+			return in_path
+	return ""
+
+
+## The player of [param platform_id] that opens [param file_name]: the first of the conf's, in
+## order, that is installed (its binary stands, [method binary_at]) and whose `accept` matches
+## the file name; the first of the platform when it has no `accept`; none, the empty one.
+static func select_player(platform_id: String, file_name: String) -> Dictionary:
+	var players: Array = _players.get(platform_id, [])
+	for player: Dictionary in players:
+		if player.get("broken", false):
+			continue
+		if binary_at(str(player.get("binary_token", ""))).is_empty():
+			continue
+		var accept: RegEx = player.get("accept")
+		if accept != null:
+			var match := accept.search(file_name, 0, file_name.length())
+			if match == null:
+				continue
+		return player
+	return {}
+
+
+## The rehearsal's command of [param platform_id] on [param file], `{file.path}` filled: the
+## fallback where the conf lists no player for the platform.
 static func command_for(platform_id: String, file: String) -> String:
-	var template: String = _COMMANDS.get(platform_id, "%s")
-	return template % file
+	return _fill(str(_COMMANDS.get(platform_id, "{file.path}")), file)
+
+
+## The template with `{file.path}` filled.
+static func _fill(template: String, file: String) -> String:
+	return template.replace("{file.path}", file)
+
+
+## The binary the command line starts with, trimmed: the player's, looked in by [method binary_at].
+static func _binary_token(command: String) -> String:
+	var stripped: String = command.strip_edges()
+	var end := 0
+	while end < stripped.length() and not stripped[end] in [" ", "	"]:
+		end += 1
+	return stripped.substr(0, end)
 
 
 ## The platform of a file beside the folder, by [param ext] and [param size]: the first of
@@ -239,9 +457,13 @@ func titleMarks(platform_id: String, position: int, typed: String) -> String:
 	return JSON.stringify(marks)
 
 
-## The launch rehearsed: the report printed to the terminal, [signal launch_reported] to the
-## dialog; nothing is started, and the answer is the rehearsal's refusal so the carousel shows
-## again.
+## The launch: rehearsed when there is no conf, or the conf rehearses, run for real otherwise.
+## The player is the conf's, per platform in order: the first installed one (its binary
+## stands, [method binary_at]) whose `accept` matches the file name; none, the launch refuses
+## as no player of the platform opens the game. Rehearsed, the report is printed and nothing
+## is started; for real, a player with `stop_first` first stops its lingering instances (the
+## emulator would resume the previous game), and its command, the conf's line with
+## `{file.path}` filled, runs, the emulator left to the display server of the container.
 func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 	var game_id: String = str(launch.get("game_id", ""))
 	var game: Dictionary = _game_by_id(game_id)
@@ -262,10 +484,11 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 	var disc_size: int = 0
 	if disc < sizes.size():
 		disc_size = sizes[disc]
+	var platform_id: String = str(game["platform_id"])
 	var report := {
 		"game": game["title"],
-		"platform": _platform_names.get(game["platform_id"], game["platform_id"]),
-		"platform_id": game["platform_id"],
+		"platform": _platform_names.get(platform_id, platform_id),
+		"platform_id": platform_id,
 		"medium": game.get("medium", ""),
 		"file": file,
 		"size": disc_size,
@@ -273,14 +496,82 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 		"serials": meta.get("serials", []),
 		"ref_code": meta.get("ref_code", ""),
 		"chd": meta.get("chd"),
-		"command": command_for(str(game["platform_id"]), file),
 	}
+	if not FileAccess.file_exists(file):
+		report["command"] = command_for(platform_id, file)
+		var missing_text := _report_text(report)
+		report["text"] = missing_text
+		print(missing_text)
+		print("  the game file is missing or cannot be read")
+		launch_reported.emit(report)
+		return {"ok": false, "code": &"file_missing",
+			"detail": "the game file %s is missing or cannot be read" % file}
+	var conf_path: String = config_path()
+	if conf_path.is_empty():
+		report["command"] = command_for(platform_id, file)
+		var rehearsal_text := _report_text(report)
+		report["text"] = rehearsal_text
+		print(rehearsal_text)
+		launch_reported.emit(report)
+		return {"ok": false, "code": &"linux_printed",
+			"detail": "launch rehearsed and printed: no emulator is started on Linux"}
+	_parse_config()
+	var selected: Dictionary = select_player(platform_id, file.get_file())
+	if selected.is_empty():
+		report["player"] = ""
+		report["binary"] = ""
+		report["stop_first"] = false
+		report["rehearsal"] = _rehearsal
+		report["config"] = conf_path
+		report["command"] = ""
+		var no_player_text := _report_text(report)
+		report["text"] = no_player_text
+		print(no_player_text)
+		launch_reported.emit(report)
+		return {"ok": false, "code": &"linux_no_player",
+			"detail": "no installed emulator for %s opens this game" % str(_platform_names.get(platform_id, platform_id))}
+	var player_name: String = str(selected["name"])
+	var binary := binary_at(str(selected.get("binary_token", "")))
+	var command := _fill(str(selected["command"]), file)
+	var rehearsal := _rehearsal
+	var stop_first: bool = selected.get("stop_first") == true
+	report["player"] = player_name
+	report["binary"] = binary
+	report["stop_first"] = stop_first
+	report["rehearsal"] = rehearsal
+	report["config"] = conf_path
+	report["command"] = command
 	var text := _report_text(report)
 	report["text"] = text
 	print(text)
 	launch_reported.emit(report)
-	return {"ok": false, "code": &"linux_printed",
-		"detail": "launch rehearsed and printed: no emulator is started on Linux"}
+	if rehearsal:
+		return {"ok": false, "code": &"linux_printed",
+			"detail": "launch rehearsed and printed: no emulator is started on Linux"}
+	if stop_first:
+		var kill_rc: int = OS.execute("pkill", ["-f", binary])
+		if kill_rc < 0:
+			print("Cartouche launch: pkill could not run (is procps installed?)")
+	# The first word of the command is the player's binary, stood where the conf says. The
+	# engine re-tokenizes `OS.execute` arguments (a quoted path would split) and holds the
+	# call open until every process with the child's output pipe is gone, so the command line
+	# stands in a file `sh` runs, and the emulator's output goes to a log file, not the pipe:
+	# the emulator is left to the container, and `sh` returns once it is started.
+	var stripped_command: String = command.strip_edges()
+	var rest: String = stripped_command.substr(_binary_token(stripped_command).length())
+	var line: String = binary + rest + " >> /tmp/cartouche-%s.log 2>&1 &" % str(selected["name"])
+	var script_path: String = "/tmp/cartouche-%s-%d.sh" % [str(selected["name"]), Time.get_ticks_msec()]
+	var sfile := FileAccess.open(script_path, FileAccess.WRITE)
+	if sfile == null:
+		return {"ok": false, "code": &"launch_failed",
+			"detail": "the launch script %s cannot be written" % script_path}
+	sfile.store_string(line + "\n")
+	sfile.close()
+	var start_rc: int = OS.execute("/bin/sh", [script_path])
+	if start_rc != 0:
+		return {"ok": false, "code": &"launch_failed",
+			"detail": "the launch failed (exit %d): %s" % [start_rc, command]}
+	return {"ok": true, "code": &"linux_launched", "detail": "launched: %s" % command}
 
 
 ## Scans the folder again, reading every game file anew; no label is looked for (there is no
@@ -1689,7 +1980,10 @@ func _one_line(game: Dictionary) -> String:
 ## The launch's report, as the terminal and the dialog read it.
 static func _report_text(report: Dictionary) -> String:
 	var lines := PackedStringArray()
-	lines.append("Cartouche (Linux) — rehearsal: nothing was started")
+	if report.get("rehearsal", true):
+		lines.append("Cartouche (Linux) — rehearsal: nothing was started")
+	else:
+		lines.append("Cartouche (Linux) — launch: %s" % str(report.get("command", "")))
 	lines.append("  game:      %s" % report.get("game", ""))
 	lines.append("  platform:  %s (%s)" % [report.get("platform", ""), report.get("platform_id", "")])
 	lines.append("  medium:    %s" % report.get("medium", ""))
@@ -1710,5 +2004,16 @@ static func _report_text(report: Dictionary) -> String:
 		if not chd_d.is_empty():
 			lines.append("  chd:       v%d hunks=%d hunk_size=%d logical=%d" % [chd_d["version"], chd_d["hunks"],
 				chd_d["hunk_size"], chd_d["logical"]])
-	lines.append("  would run: %s" % report.get("command", ""))
+	var player: String = str(report.get("player", ""))
+	if player.is_empty() and report.has("player"):
+		lines.append("  player:    none: no installed emulator opens the file")
+	elif not player.is_empty():
+		lines.append("  player:    %s — %s" % [player, str(report.get("binary", ""))])
+		if report.get("stop_first", false):
+			lines.append("  stop_first: its lingering instances are stopped first")
+	var command: String = str(report.get("command", ""))
+	if command.is_empty():
+		lines.append("  would run: (no launch)")
+	else:
+		lines.append("  would run: %s" % command)
 	return "\n".join(lines)
