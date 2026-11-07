@@ -127,9 +127,12 @@ static var _rehearsal := true
 ## [method Diagnostics.argument], which is silent in release builds, and this one is not.
 static func argument(option: String) -> String:
 	var prefix := "--%s=" % option
+	var flag := "--" + option
 	for given: String in OS.get_cmdline_user_args():
 		if given.begins_with(prefix):
 			return given.trim_prefix(prefix)
+		if given == flag:
+			return "1"
 	return ""
 
 
@@ -1392,7 +1395,12 @@ static func _alnum(text: String) -> String:
 static func _normalize(text: String) -> String:
 	var re := RegEx.new()
 	re.compile("\\s+")
-	return re.sub(text.strip_edges(), " ", true).to_lower()
+	var t := re.sub(text.strip_edges(), " ", true).to_lower()
+	# The subtitle's separators mean one thing in every listing: the reference lists' ` - `,
+	# LaunchBox's `:`, and the bare space it sometimes leaves; the keys compare without them.
+	var sep := RegEx.new()
+	sep.compile("[-:]")
+	return sep.sub(t, "", true)
 
 
 ## [param name] without its trailing ` (region)` and ` (disc N)` tags, as the user reads it.

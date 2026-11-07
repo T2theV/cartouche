@@ -116,6 +116,8 @@ func _ready() -> void:
 	_load_catalog()
 	if _plugin is LinuxPlugin and LinuxPlugin.argument("play") != "":
 		_cli_launch()
+	if _plugin is LinuxPlugin and LinuxPlugin.argument("list") != "":
+		_cli_list()
 
 
 ## The `--play=GAME_ID` argument: one launch from the command line, the container's way to run a
@@ -161,6 +163,18 @@ func _load_catalog() -> void:
 	if Diagnostics.enabled:
 		Diagnostics.trace("plugin", "catalog read in %.1f ms, loaded in %.1f ms" % [(read - started) / 1000.0,
 			(Time.get_ticks_usec() - read) / 1000.0])
+
+
+## The `--list` argument: one line per game, `id  platform  identified  title` — the library
+## the way a terminal would read it, so a console report needs no display.
+func _cli_list() -> void:
+	var answer: Dictionary = await _request(&"library")
+	var view: Dictionary = JSON.parse_string(str(answer.get("library", "{}")))
+	var games: Array = view.get("games", [])
+	for game: Dictionary in games:
+		print("%s\t%s\t%d\t%s" % [str(game["id"]), str(game["platform_id"]),
+			1 if game["identified"] else 0, str(game["title"])])
+	get_tree().quit(0)
 
 
 ## Installed players of [param platform_id], in definition order.
