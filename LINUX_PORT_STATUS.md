@@ -10,16 +10,21 @@ Working dir: `/opt/data/cartouche-linux/` (modified copy of the repo). Godot bin
 
 ## Final state (everything green)
 
-- `app/adapters/linux/linux_plugin.gd` — the complete faithful parse layer (single file,
-  ~1360 lines): CRC32 table, iNES/copier-header cartridge prints, zip central-directory CRC
+- `app/adapters/linux/linux_plugin.gd` — the complete faithful parse and launch layer
+  (single file, ~2020 lines): CRC32 table, iNES/copier-header cartridge prints, zip central-directory CRC
   (+ zip-member-extension platform resolution), MAME v5 CHD huffman decode (stored hunks),
   ISO9660 PVD → root directory → `SYSTEM.CNF` `BOOT2` serial, alnum-key serial matching,
   recursive directory walk (DirAccess is top-level-only statics in 4.7.2), per-platform and
   whole-scan reports, rehearsal launch (`linux_printed`, nothing spawned), `launch_reported`
   signal → dialog. Compiles clean under the project's strict GDScript mode.
-- `app/test/linux/linux_smoke.tscn` + `.gd` — headless smoke test, **33/33 checks pass**
-  (5 games identified, prints/serials verified against the bundled reference lists, both
-  negative fixtures, 5 rehearsal reports with correct CRCs/serials/CHD fields).
+- `app/test/linux/linux_smoke.tscn` + `.gd` — headless smoke test, **35/35 checks pass**
+  (7 games, prints/serials verified against the bundled reference lists, the folder
+  fixtures — a dreamcast chd and a gc rvz under platform folders — and both negative
+  fixtures, 5 rehearsal reports with correct CRCs/serials/CHD fields).
+- `app/test/linux/launch_test.tscn` + `.gd` — headless launch test, **17/17 checks pass**:
+  rehearsal selection (the alias miss, the uninstalled player and the non-accepting
+  player are skipped), a real launch with stub emulators (argv logged, file path intact),
+  `stop_first` killing the lingering instance before the second launch, no-player refusal.
 - `make_fixtures.py` (repo root) — generates the verified fixtures in `roms/`:
   Tetris (USA).nes → print `1394F57E` (in data/prints/nes.tsv),
   Super Mario World (USA).sfc (512-byte copier header) → `B19ED489` (snes.tsv),
@@ -42,6 +47,9 @@ Working dir: `/opt/data/cartouche-linux/` (modified copy of the repo). Godot bin
 cd /opt/data/cartouche-linux/app
 # smoke test (headless; -- before user args):
 /opt/data/bin/godot --headless --path . res://test/linux/linux_smoke.tscn \
+  -- --games-dir=/opt/data/cartouche-linux/roms
+# launch test (headless; stub emulators in /tmp, needs procps for stop_first):
+/opt/data/bin/godot --headless --path . res://test/linux/launch_test.tscn \
   -- --games-dir=/opt/data/cartouche-linux/roms
 # the app itself (any display; --headless also works):
 /opt/data/bin/godot --headless --path . -- --games-dir=/opt/data/cartouche-linux/roms
@@ -108,22 +116,58 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   confirmed by screenshot; FF7 correctly absent, no image in the index for that name);
   an earlier `/ROMs` run downloaded 4 real-library covers.
 
+## Folder matching (implemented, verified on the real /ROMs)
+
+- A file under a folder named for a platform is a game of that platform when the platform
+  lists the file's extension; a file beside any folder (the games dir's own files) resolves
+  by extension+size as before. Files under a folder no platform names (`bios`, `amiibo`,
+  `switch`, `switch-updates`, `wiiu`) or one a platform does not list (media caches, the
+  rpcs3-style `.ps3` game folders' bindings, `.7z` archives, `.xbe` folder files) are set
+  aside, not games.
+- `ps3` (iso only — the user is converting the `.ps3` game folders to `.iso`) and
+  `dreamcast` join `_EXTENSIONS`, `_ORDER`, `profiles.json` and the catalog
+  (`dev/demo/desktop.json` — the catalog gates `_catalog_order()`, so a platform with no
+  catalog entry can hold no shelf, however many games it has).
+- Extensions added: `rvz` (gc/wii compressed disc container, magic `RVZ\x01`), `wbfs`
+  (wii), `zar` (xbox360, an LZMA archive — opaque, not a zip). Rehearsed launch commands:
+  `rpcs3 %s` (ps3), `kega_fusion %s` (dreamcast).
+- Verified in webtop, headless, on the real 410 GB library: **112 games on 12 consoles,
+  82 identified, 15,004 files set aside**. Both ps3 isos found (Kingdom Hearts - HD 1.5
+  ReMIX, 21.9 GB; Ratchet & Clank Collection). The dreamcast's six CHDs and all thirty-seven
+  rvz/wbfs discs sit on their own shelves; nothing from bios/amiibo/switch/media surfaces as
+  a game of another console (before the fix the xbox/dreamcast ISOs read as ps2 and a
+  `.xbe` sounds folder leaked a `dsstdfx` psx game).
+
+## Launch (implemented, tested)
+
+- `cartouche.conf` is the 1:1 mirror of the Android `playerList`. Resolution:
+  `--config=PATH` (after `--`) → `CARTOUCHE_CONFIG` env → `cartouche.conf` beside the
+  executable → beside the working directory. Globals: `rehearsal = true/false`
+  (true is the default — nothing runs until the conf says otherwise),
+  `path = dir:dir` (dirs for binary lookup, ahead of the system PATH),
+  `alias.NAME = /path/to/binary` (name → path, beats both). Per-platform section:
+  `NAME = command template` with `{file.path}` / `{file.name}` placeholders,
+  `NAME.accept = regex` (a player accepts only files matching it),
+  `NAME.stop_first = true` (`pkill -f <binary>` before starting). A player is
+  installed when its binary resolves (alias → `path` dirs → system PATH); the first
+  installed, accepting player wins. No `where`/docker axis: one container, cartouche +
+  emulators + display server.
+- The command line runs through a script file: the engine re-tokenizes `OS.execute`
+  arguments (a quoted path would split) and holds the call open until the child's output
+  pipe closes, so the line stands in `/tmp/cartouche-<player>-<ms>.sh` as
+  `<binary> <args> >> /tmp/cartouche-<player>.log 2>&1 &`, run by `sh <file>`: the
+  emulator is left to the container and `launchGame` returns once it is started.
+- Results: `linux_printed` (rehearsal), `linux_launched`, `linux_no_player`,
+  `linux_not_installed`, `launch_failed`. The report (player, binary, rendered command,
+  rehearsal/stop_first flags) prints and emits `launch_reported` (the dialog).
+
 ## Outstanding (in queue order)
 
-1. **Folder-matching**: the classifier keys on extension+size, so `/ROMs/bios/ps2/*.bin`
-   misreads as N64. Fix: the top-level folder under the games dir is the platform;
-   extension+size only for root-level files. Add `ps3`/`dreamcast` to `_EXTENSIONS`/
-   `profiles.json`/catalog and `rvz` (GC/Wii discs) where the library has them.
-2. **Launch configuration**: `cartouche.conf`, a 1:1 mirror of the Android `playerList`
-   (per-platform players: `command` template with `{file.path}`, `accept` pattern,
-   optional `stop_first`; global `rehearsal = true`; availability = `command -v` in the
-   image; first matching player wins). No `where`/docker axis: one container, cartouche +
-   emulators + display server.
-3. **Compressed CHD serials**: `cdlz` (zlib) hunks decode to nothing (no Zlib in Godot 4.7.2);
-   stored hunks only. Identification then falls to serial/name for those discs.
-4. **Full `/ROMs` scan**: 410 GB, ~744 zips (730 in `amiibo/`) — headless scan of the
-   ps2+psx subset (~2 GB) took a few minutes; the whole tree needs `amiibo/` excluded or a
-   long patience.
+1. **Compressed CHD serials**: `cdlz` (zlib) hunks decode to nothing (no Zlib in Godot
+   4.7.2); stored hunks only. Identification then falls to serial/name for those discs.
+2. **7z archives**: `/ROMs/n64/*.7z` (San Francisco Rush - Extreme Racing) are set aside;
+   no 7z decoder in Godot 4.7.2, and its layout is not the zip's. The cartridge-print
+   identification path is unaffected for anything extracted.
 
 ## Design notes
 
@@ -131,7 +175,10 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   header skipped; zip = the CRC its central directory records) → disc **serial** (alnum key,
   case/separator-insensitive: `SLES_524.95` ≡ `SLES-52495`) → **name** (normalized title in
   `data/titles/<id>.tsv`).
-- Platform = first platform in `_ORDER` (discs first) that lists the file's extension
+- Platform = the folder a file sits in, when that folder is a platform (the library keeps
+  one folder per console; the platform must also list the file's extension — media caches,
+  `.ps3` game folders, bios, 7z and xbe bindings stay set aside). A file beside any folder
+  resolves the old way: first platform in `_ORDER` (discs first) that lists the extension
   (`data/platforms/daijishou/`) and whose `minimumGameBytes` (`profiles.json`) the file
   reaches; below every candidate's minimum → `not_games`; no candidate → `unsupported`.
   `.zip` resolves to the member ROM's extension (local file header), not "zip".
@@ -141,6 +188,7 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   at PVD[156] → `SYSTEM.CNF` → `BOOT2 = cdromN:\SERIAL;1`.
 - The CHD/ISO sector read returns `PackedByteArray()` (empty) for compressed/missing hunks;
   `_iso9660_boot_serial` tolerates that and yields no serial.
-- The rehearsal: `launchGame` returns `{"ok": true, "code": "linux_printed", ...}`, prints
-  `Cartouche (Linux) — rehearsal: nothing was started` + the report, emits `launch_reported`
-  (the dialog). No process is spawned anywhere.
+- The launch: rehearsal prints the report (`linux_printed`, nothing spawned); live, the
+  rendered command line stands in a script file that `sh` runs with the emulator's output
+  in a log file and `&` — the emulator is left to the container and the call returns
+  once it is started (see the Launch section for why the pipe matters).
