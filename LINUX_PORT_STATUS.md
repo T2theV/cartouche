@@ -173,8 +173,9 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   (`usa` → `North America`, `europe` → `Europe`, `japan` → `Japan`, `world` → `World`,
   `australia` → `Australia`; a multi-region tag like `usa, asia` stands for its first
   mappable entry) and takes that file or none. A name's region is its last ` (tag)` that
-  is a region — ` (USA, Asia)` is one, ` (Rev 2)` and ` (En,Fr,De,Es,It)` are not — so a
-  game with no region tag (unidentified, tagless name) has no label under strict. The
+  is a region — ` (USA, Asia)` is one, a revision tag (` (Rev 2)`, ` (Evolution)`) and a
+  language tag (` (En,Fr,De,Es,It)`) are not — so a game with no region tag (unidentified,
+  tagless name) has no label under strict. The
   serial source's label stays: the serial itself carries the region (`SLUS` is a USA
   release). The stored file's name is the game's, not the label's (`linux_<index>.<ext>`),
   so a label from the other mode stands in until the art folder is cleared — switch modes

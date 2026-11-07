@@ -35,7 +35,7 @@ func _ready() -> void:
 	var library_holds_games: bool = library is Dictionary and not library.is_empty()
 	_check(library_holds_games, "library is JSON")
 	var games: Array = library.get("games", [])
-	_check(games.size() == 9, "9 games found, got %d" % games.size())
+	_check(games.size() == 10, "10 games found, got %d" % games.size())
 	var shelves_found: Dictionary = library.get("shelves", {})
 	var shelves: Array = shelves_found.get("shelves", [])
 	_check(shelves.size() == 8, "8 shelves, got %d" % shelves.size())
@@ -125,6 +125,16 @@ func _ready() -> void:
 	var fzmax_loose: Array = plugin._art_candidates(fzmax)
 	var fzmax_loose_file: String = str(fzmax_loose[0]["file"]) if fzmax_loose.size() > 0 else ""
 	_check(fzmax_loose_file == "5fbd2541-cd5f-43ea-a75a-272392dde937.png", "no flag: the first region's file (Europe), got %s" % fzmax_loose_file)
+	# A revision tag is not a region: `(Evolution)` stands off, the region is `(USA)`.
+	LinuxPlugin.set_label_region("strict")
+	var nexus: Dictionary = by_title.get("Armored Core - Nexus (USA) (Disc 1)", {})
+	var nexus_cands: Array = plugin._art_candidates(nexus)
+	var nexus_file: String = str(nexus_cands[0]["file"]) if nexus_cands.size() > 0 else ""
+	_check(nexus_file == "aeef04b6-fd7d-45d6-8c1f-95f78b30df9b.png", "strict: the revision tag is not the region, got %s" % nexus_file)
+	LinuxPlugin.set_label_region("")
+	var nexus_loose: Array = plugin._art_candidates(nexus)
+	var nexus_loose_file: String = str(nexus_loose[0]["file"]) if nexus_loose.size() > 0 else ""
+	_check(nexus_loose_file == "aeef04b6-fd7d-45d6-8c1f-95f78b30df9b.png", "no flag: the first region's file, got %s" % nexus_loose_file)
 
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})
