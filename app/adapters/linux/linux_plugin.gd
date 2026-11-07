@@ -1247,9 +1247,10 @@ func _art_candidates(game: Dictionary) -> Array:
 	var platform_id := str(game["platform_id"])
 	var index: Dictionary = _art_index_for(platform_id)
 	var images: Dictionary = {}
-	var key := _normalize(str(game["title"]))
-	if index.has(key):
-		images = index[key]
+	for k: String in _title_keys(str(game["title"])):
+		if index.has(k):
+			images = index[k]
+			break
 	if not images.is_empty():
 		var region := ""
 		var game_regions: Array = game.get("regions", [])
@@ -1270,6 +1271,26 @@ func _art_candidates(game: Dictionary) -> Array:
 		out.append({"source": _ART_SOURCE_PSDATACENTER, "source_name": "PlayStation DataCenter",
 			"region": "", "url": serial_url, "file": serial_url.get_slice("/", -1)})
 	return out
+
+
+## The title's keys, the index's way: itself, then with its trailing `(Region)` and `(Disc N)`
+## tags off, as the reference names carry them (`Final Fantasy VII (Europe) (Disc 1)`).
+func _title_keys(title: String) -> Array:
+	var keys: Array = [_normalize(title)]
+	var stripped := _tags_stripped(title)
+	if stripped != title:
+		keys.append(_normalize(stripped))
+	return keys
+
+
+static func _tags_stripped(title: String) -> String:
+	var t := title
+	while t.ends_with(")"):
+		var cut := t.rfind(" (")
+		if cut < 0:
+			break
+		t = t.substr(0, cut)
+	return t.strip_edges()
 
 
 ## The serial source's URL of [param game]'s first serial, by [param platform_id]'s
