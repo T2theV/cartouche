@@ -1697,19 +1697,26 @@ func artFocus(focus: PackedStringArray) -> void:
 	DirAccess.make_dir_recursive_absolute(art_dir())
 	var queue: Array = []
 	var absent: PackedStringArray = PackedStringArray()
+	var stored_done := 0
 	for id_game: String in _art_game_order(focus):
 		var game := _game_by_id(id_game)
 		if game.is_empty():
 			continue
-		if not _art_stored(game).is_empty():
+		var stored := _art_stored(game)
+		if not stored.is_empty():
+			# The label is on disk from a run before: the carousel only shows a label it is
+			# told of, so a restart with a full art folder would show none without this.
+			stored_done += 1
+			_art_changed({"done": stored_done, "total": 0,
+				"found": {"game_id": id_game, "path": stored}})
 			continue
 		var candidates := _art_candidates(game)
 		if candidates.is_empty():
 			absent.append(id_game)
 		else:
 			queue.append({"game_id": id_game, "candidates": candidates, "attempt": 0})
-	_art_done = 0
-	_art_total = queue.size()
+	_art_done = stored_done
+	_art_total = queue.size() + stored_done
 	_art_jobs = queue
 	_art_stall = ""
 	if not absent.is_empty():
