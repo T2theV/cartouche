@@ -88,8 +88,8 @@ const _MAX_PARSE_BYTES := 64 * 1024 * 1024
 const _DISC_NUMBER_RE := "\\((?:disc|disk)\\s*(\\d+)\\)|(?:^|\\s)(?:disc|disk)\\s*[-:]?\\s*(\\d+)$"
 ## The `(disc N)` and the trailing `disc N` of a file name, for [method _group_key].
 const _DISC_KEY_RE := "\\s*\\((?:disc|disk)\\s*\\d+\\)|(?:^|\\s)(?:disc|disk)\\s*[-:]?\\s*\\d+\\s*$"
-## The last ` (tag)` of a reference name.
-const _TAG_RE := " \\(([A-Za-z][A-Za-z ]{0,11})\\)"
+## The ` (tag)` of a reference name, a region or a language, comma-separated.
+const _TAG_RE := " \\(([A-Za-z][A-Za-z ,]{0,11})\\)"
 ## The trailing tags of a name, as [method _display_name] cuts them.
 const _DISPLAY_RE := "\\s+\\((?:disc|disk)\\s*\\d+\\)$|\\s+\\([A-Za-z][A-Za-z ]{0,11}\\)$"
 ## A disc number, not a region.
@@ -1418,8 +1418,8 @@ static func _display_name(name: String) -> String:
 	return out.strip_edges()
 
 
-## The last region tag of [param name], its last ` (tag)` that is not a disc number; empty when
-## it has none.
+## The last region tag of [param name], its last ` (tag)` that is a region (not a disc
+## number, not `Rev N`, not a language); empty when it has none.
 static func _tag_of(name: String) -> String:
 	var re := RegEx.new()
 	re.compile(_TAG_RE)
@@ -1428,7 +1428,7 @@ static func _tag_of(name: String) -> String:
 	var region := ""
 	for match: RegExMatch in re.search_all(name):
 		var tag := match.get_string(1)
-		if disc_re.search(tag) == null:
+		if disc_re.search(tag) == null and _label_region_key(tag) != "":
 			region = tag
 	return region
 

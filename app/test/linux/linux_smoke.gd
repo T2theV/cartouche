@@ -35,10 +35,10 @@ func _ready() -> void:
 	var library_holds_games: bool = library is Dictionary and not library.is_empty()
 	_check(library_holds_games, "library is JSON")
 	var games: Array = library.get("games", [])
-	_check(games.size() == 7, "7 games found, got %d" % games.size())
+	_check(games.size() == 9, "9 games found, got %d" % games.size())
 	var shelves_found: Dictionary = library.get("shelves", {})
 	var shelves: Array = shelves_found.get("shelves", [])
-	_check(shelves.size() == 6, "6 shelves, got %d" % shelves.size())
+	_check(shelves.size() == 8, "8 shelves, got %d" % shelves.size())
 	var by_title := {}
 	for game: Dictionary in games:
 		var game_title: String = str(game["title"])
@@ -110,6 +110,21 @@ func _ready() -> void:
 	_check(smw_again_file == "a8dfd64e-9c01-4889-8be9-34bcf856cfab.jpg", "flag off again: the first region's file, got %s" % smw_again_file)
 	_check(LinuxPlugin._label_region_key("USA") == "North America", "the tag maps to the index's region name")
 	_check(LinuxPlugin._label_region_key("USA, Asia") == "North America", "a multi-region tag stands for its first")
+	# A multi-region title identified by its name: `(USA, Europe)` and `(USA, Asia)` stand
+	# for North America.
+	LinuxPlugin.set_label_region("strict")
+	var fzmax: Dictionary = by_title.get("F-Zero - Maximum Velocity (USA, Europe)", {})
+	var fzmax_cands: Array = plugin._art_candidates(fzmax)
+	var fzmax_file: String = str(fzmax_cands[0]["file"]) if fzmax_cands.size() > 0 else ""
+	_check(fzmax_file == "r2_8b7046b2-a0d1-4992-b444-f94742132a55.png", "strict: (USA, Europe) stands for North America, got %s" % fzmax_file)
+	var mario8: Dictionary = by_title.get("Mario Party 8 (USA, Asia) (Rev 2)", {})
+	var mario8_cands: Array = plugin._art_candidates(mario8)
+	var mario8_file: String = str(mario8_cands[0]["file"]) if mario8_cands.size() > 0 else ""
+	_check(mario8_file == "c00d84a2-345e-428c-a705-18c8b859710c.png", "strict: (USA, Asia) stands for North America, got %s" % mario8_file)
+	LinuxPlugin.set_label_region("")
+	var fzmax_loose: Array = plugin._art_candidates(fzmax)
+	var fzmax_loose_file: String = str(fzmax_loose[0]["file"]) if fzmax_loose.size() > 0 else ""
+	_check(fzmax_loose_file == "5fbd2541-cd5f-43ea-a75a-272392dde937.png", "no flag: the first region's file (Europe), got %s" % fzmax_loose_file)
 
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})
