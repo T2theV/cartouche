@@ -160,6 +160,13 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
 - Results: `linux_printed` (rehearsal), `linux_launched`, `linux_no_player`,
   `linux_not_installed`, `launch_failed`. The report (player, binary, rendered command,
   rehearsal/stop_first flags) prints and emits `launch_reported` (the dialog).
+- `--play=GAME_ID` (after `--`): the command-line launch — the app scans, launches the named
+  game rehearsed or run as the conf says, prints the report, and quits with the launch's
+  code (0 for `linux_launched` and rehearsed `linux_printed`, 1 otherwise): the container's
+  way to run a game headless or through the display server.
+- The conf's `{file.path}` stands unquoted in the template and the report; the command line
+  for `sh` quotes it (and a spaced binary), so a spaced path arrives at the emulator as one
+  argument.
 
 ## Outstanding (in queue order)
 
