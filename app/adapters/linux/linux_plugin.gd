@@ -10,7 +10,7 @@ extends DesktopPlugin
 ## and [signal launch_reported] carries the report to the dialog the carousel shows.
 ##
 ## The folder is the `--games-dir=PATH` argument, the `CARTOUCHE_GAMES_DIR` environment variable,
-## or `roms/` beside the working directory.
+## or `roms/` (beside the executable in an exported game, beside the working directory otherwise).
 ##
 ## Identification, per game, in order:
 ## 1. on a cartridge, the ROM's CRC32 against the platform's prints
@@ -333,6 +333,11 @@ func _read_data() -> void:
 		var medium: Dictionary = profile.get("medium", {})
 		_medium_of[platform_id] = medium.get("default", "")
 		_min_bytes[platform_id] = profile.get("minimumGameBytes", 0)
+		var scans_raw: Variant = profile.get("scansBySerial", {})
+		var scans: Dictionary = {}
+		if scans_raw is Dictionary:
+			scans = scans_raw
+		_art_scans_url[platform_id] = str(scans.get("url", ""))
 	_title_lists = _list(_TITLES, true)
 	_print_lists = _list(_PRINTS, false)
 	_serial_index = _serial_lists()
@@ -1143,6 +1148,311 @@ static func _to_hex(value: int) -> String:
 		out = digits[value & 0xF] + out
 		value >>= 4
 	return out
+
+
+# ------------------------------------------------------------- the art
+
+## The plugin's answers, as the services' signals carry them; the desktop stand-in's are the
+## demo's, the Android bridge's the device's.
+signal answered(payload: Dictionary)
+signal art_changed(payload: Dictionary)
+signal art_progress(payload: Dictionary)
+signal label_variant_downloaded(payload: Dictionary)
+signal battery_changed(payload: Dictionary)
+
+const _ART_INDEX_DIR := "res://data/art"
+const _ART_IMAGES := "https://images.launchbox-app.com/"
+const _ART_SOURCE_LAUNCHBOX := "launchbox"
+const _ART_SOURCE_PSDATACENTER := "psxdatacenter"
+
+var _art_index: Dictionary = {}
+var _art_scans_url: Dictionary = {}
+var _art_jobs: Array = []
+var _art_total := 0
+var _art_done := 0
+var _art_stall := ""
+var _art_http: Variant = null
+var _art_job: Dictionary = {}
+var _art_source_by_game: Dictionary = {}
+
+
+## The art folder: `--art-dir=PATH`, the `CARTOUCHE_ART_DIR` environment, or the user's
+## share dir.
+static func art_dir() -> String:
+	var given := argument("art-dir")
+	if given:
+		return given
+	var env := OS.get_environment("CARTOUCHE_ART_DIR")
+	if env:
+		return env
+	return ProjectSettings.globalize_path("user://art")
+
+
+static func _art_file_name(game_id: String, file: String) -> String:
+	# The reader's `Image.load_from_file` wants the image's own extension, its bytes do not care.
+	var ext := file.get_slice(".", -1).to_lower()
+	if ext.is_empty():
+		ext = "png"
+	return game_id.replace("/", "_") + "." + ext
+
+
+## The stored label of [param game], when one is in the art folder, in the candidates' order;
+## none yet.
+func _art_stored(game: Dictionary) -> String:
+	for candidate: Dictionary in _art_candidates(game):
+		var path := art_dir().path_join(_art_file_name(str(game["id"]), str(candidate["file"])))
+		if FileAccess.file_exists(path):
+			return path
+	return ""
+
+
+## The art index of [param platform_id], read from `res://data/art/<id>.tsv` on first need:
+## the normalized names, the game's and its alternates, to `{region: file}`.
+func _art_index_for(platform_id: String) -> Dictionary:
+	if _art_index.has(platform_id):
+		return _art_index[platform_id]
+	var found: Dictionary = {}
+	var text_path := _ART_INDEX_DIR.path_join(platform_id + ".tsv")
+	if FileAccess.file_exists(text_path):
+		var data := FileAccess.get_file_as_bytes(text_path)
+		var text: String = data.get_string_from_utf8()
+		for line: String in text.split("\n"):
+			var clean: String = line.rstrip("\r")
+			if clean.is_empty() or clean.begins_with("#"):
+				continue
+			var parts := clean.split("\t")
+			if parts.size() < 3:
+				continue
+			var images: Dictionary = {}
+			for pair: String in parts[2].split(";"):
+				var eq := pair.find("=")
+				if eq < 0:
+					continue
+				images[pair.substr(0, eq)] = pair.substr(eq + 1)
+			if images.is_empty():
+				continue
+			found[_normalize(parts[0])] = images
+			for alt: String in parts[1].split("|"):
+				if not alt.is_empty():
+					found[_normalize(alt)] = images
+	_art_index[platform_id] = found
+	return found
+
+
+## The candidates for [param game]'s label, in priority order, discs' LaunchBox's scan first
+## and, on the serial platforms, the serial source's: each `{"source", "source_name",
+## "region", "url", "file"}`.
+func _art_candidates(game: Dictionary) -> Array:
+	var out: Array = []
+	var platform_id := str(game["platform_id"])
+	var index: Dictionary = _art_index_for(platform_id)
+	var images: Dictionary = {}
+	var key := _normalize(str(game["title"]))
+	if index.has(key):
+		images = index[key]
+	if not images.is_empty():
+		var region := ""
+		var game_regions: Array = game.get("regions", [])
+		if not game_regions.is_empty():
+			region = str(game_regions[0])
+		var file := ""
+		if images.has(region):
+			file = str(images[region])
+		else:
+			for r: String in images:
+				file = str(images[r])
+				break
+		if not file.is_empty():
+			out.append({"source": _ART_SOURCE_LAUNCHBOX, "source_name": "LaunchBox",
+				"region": region, "url": _ART_IMAGES + file, "file": file})
+	var serial_url := _art_serial_url(platform_id, game)
+	if not serial_url.is_empty():
+		out.append({"source": _ART_SOURCE_PSDATACENTER, "source_name": "PlayStation DataCenter",
+			"region": "", "url": serial_url, "file": serial_url.get_slice("/", -1)})
+	return out
+
+
+## The serial source's URL of [param game]'s first serial, by [param platform_id]'s
+## `scansBySerial` template, its serial as the template's regex writes it (`SLPM-66124`);
+## none otherwise.
+func _art_serial_url(platform_id: String, game: Dictionary) -> String:
+	var template := str(_art_scans_url.get(platform_id, ""))
+	if template.is_empty():
+		return ""
+	var serials: Array = game.get("serials", [])
+	if serials.is_empty():
+		return ""
+	var alnum: String = str(_alnum(str(serials[0])))
+	if alnum.length() < 10:
+		return ""
+	var prefix := alnum.substr(0, 4)
+	var rest := alnum.substr(4, 5)
+	if rest.length() != 5:
+		return ""
+	var all_digits := true
+	for c: String in rest:
+		if c < "0" or c > "9":
+			all_digits = false
+			break
+	if not all_digits or prefix != prefix.to_upper():
+		return ""
+	return template.replace("{serial}", prefix + "-" + rest)
+
+
+## The label variants of [param game_id], as `labelVariants` answers.
+func labelVariants(_id: int, game_id: String) -> Dictionary:
+	var game := _game_by_id(game_id)
+	if game.is_empty():
+		return {"ok": false}
+	var variants: Array = []
+	var stored := _art_stored(game)
+	var stored_source := str(_art_source_by_game.get(game_id, ""))
+	for candidate: Dictionary in _art_candidates(game):
+		var variant: Dictionary = {
+			"game_id": game_id,
+			"region": candidate["region"],
+			"source": candidate["source"],
+			"source_name": candidate["source_name"]}
+		if not stored.is_empty() and candidate["source"] == stored_source:
+			variant["path"] = stored
+		variants.append(variant)
+	return {"ok": true, "variants": variants}
+
+
+## The games' order for the art: [param focus] first, in order, the library's after.
+func _art_game_order(focus: PackedStringArray) -> PackedStringArray:
+	var order := PackedStringArray()
+	for id_focus: String in focus:
+		if _by_id.has(id_focus):
+			order.append(id_focus)
+	for game_raw: Variant in _current.get("games", []):
+		var game: Dictionary = game_raw
+		var id_game := str(game["id"])
+		if not order.has(id_game):
+			order.append(id_game)
+	return order
+
+
+## The games' art, looked for as the carousel gives the on-screen games: the stored labels are
+## told at once, the rest downloaded one by one, LaunchBox's then the serial source's,
+## [signal art_changed] the progress, a found, or the absences.
+func artFocus(focus: PackedStringArray) -> void:
+	if DisplayServer.get_name() == "headless" or _art_http != null:
+		return
+	_ensure_scanned()
+	DirAccess.make_dir_recursive_absolute(art_dir())
+	var queue: Array = []
+	var absent: PackedStringArray = PackedStringArray()
+	for id_game: String in _art_game_order(focus):
+		var game := _game_by_id(id_game)
+		if game.is_empty():
+			continue
+		if not _art_stored(game).is_empty():
+			continue
+		var candidates := _art_candidates(game)
+		if candidates.is_empty():
+			absent.append(id_game)
+		else:
+			queue.append({"game_id": id_game, "candidates": candidates, "attempt": 0})
+	_art_done = 0
+	_art_total = queue.size()
+	_art_jobs = queue
+	_art_stall = ""
+	if not absent.is_empty():
+		_art_changed({"done": _art_done, "total": _art_total, "absent": absent})
+	_art_next()
+
+
+func _art_next() -> void:
+	if _art_jobs.is_empty():
+		return
+	var job: Dictionary = {}
+	job = _art_jobs.pop_front()
+	_art_job = job
+	var candidates: Array = job["candidates"]
+	var attempt: int = job["attempt"]
+	if attempt >= candidates.size():
+		# Every candidate failed: no source had an image.
+		_art_done += 1
+		_art_changed({"done": _art_done, "total": _art_total,
+			"absent": PackedStringArray([str(job["game_id"])])})
+		_art_next()
+		return
+	var candidate: Dictionary = candidates[attempt]
+	var http := HTTPRequest.new()
+	# Godot 4.7's HTTPRequest is a Node: the AndroidServices autoload keeps it in the tree.
+	var loop: Variant = Engine.get_main_loop()
+	if not (loop is SceneTree) or http == null:
+		job["attempt"] = attempt + 1
+		_art_jobs.push_front(job)
+		_art_next()
+		return
+	var tree: SceneTree = loop
+	var owner: Node = tree.root.get_node_or_null("Android")
+	if owner == null:
+		http.queue_free()
+		_art_stall = "offline"
+		_art_jobs.push_front(job)
+		_art_changed({"done": _art_done, "total": _art_total, "stall": _art_stall})
+		return
+	owner.add_child(http)
+	http.request_completed.connect(_on_art_request.bind(http))
+	_art_http = http
+	http.request(str(candidate["url"]))
+
+
+func _on_art_request(result: int, response_code: int, _headers: PackedStringArray,
+		body: PackedByteArray, http: Node) -> void:
+	_art_http = null
+	var job := _art_job
+	_art_job = {}
+	var game_id := str(job["game_id"])
+	var candidates: Array = job["candidates"]
+	var attempt: int = job["attempt"]
+	var candidate: Dictionary = candidates[attempt]
+	if result == HTTPRequest.RESULT_SUCCESS and response_code == 200 and not body.is_empty():
+		var path := art_dir().path_join(_art_file_name(game_id, str(candidate["file"])))
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		if file == null:
+			_art_stall = "storage"
+			_art_changed({"done": _art_done, "total": _art_total, "stall": _art_stall})
+			http.queue_free()
+			return
+		file.store_buffer(body)
+		file.close()
+		_art_source_by_game[game_id] = str(candidate["source"])
+		_art_done += 1
+		_art_changed({"done": _art_done, "total": _art_total,
+			"found": {"game_id": game_id, "path": path}})
+		_label_variant_downloaded(game_id, candidate, path)
+		http.queue_free()
+		_art_next()
+		return
+	http.queue_free()
+	if response_code >= 400 or body.is_empty():
+		# No image here: the next candidate, or, none left, the absence.
+		job["attempt"] = attempt + 1
+		_art_jobs.push_front(job)
+		_art_next()
+		return
+	# The network will not: wait, then look again from this game.
+	_art_stall = "offline"
+	_art_jobs.push_front(job)
+	_art_changed({"done": _art_done, "total": _art_total, "stall": _art_stall})
+
+
+func _label_variant_downloaded(game_id: String, candidate: Dictionary, path: String) -> void:
+	var payload: Dictionary = {
+		"game_id": game_id,
+		"region": candidate["region"],
+		"source": candidate["source"],
+		"source_name": candidate["source_name"],
+		"path": path}
+	label_variant_downloaded.emit(payload)
+
+
+func _art_changed(payload: Dictionary) -> void:
+	art_changed.emit(payload)
 
 
 # ------------------------------------------------------------- the reporting

@@ -117,7 +117,9 @@ func _ready() -> void:
 
 
 func is_available() -> bool:
-	return _plugin is not DesktopPlugin
+	# The Linux plugin scans a real folder like the Android bridge's, and its signals carry
+	# the answers; it stands in for the bridge, not for the demo.
+	return _plugin is not DesktopPlugin or _plugin is LinuxPlugin
 
 
 ## Whether the desktop shows a snapshot of a device's data (`--snapshot=DIR`).
