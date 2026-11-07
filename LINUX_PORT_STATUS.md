@@ -87,6 +87,44 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   runs. `Diagnostics` traces are gated on `OS.is_debug_build()` (silent in release by design);
   the plugin's own `print`s (scan summary, rehearsal report) are unconditional.
 
+## Artwork (implemented, verified in the webtop container)
+
+- `linux_plugin.gd` — the art pipeline: `artFocus` (the carousel's on-screen games first)
+  downloads one candidate at a time and stores each label in the art folder
+  (`--art-dir` → `CARTOUCHE_ART_DIR` → `user://art`) **with the image's own extension**
+  (`Image.load_from_file` refuses unknown extensions; same bytes load as `.png`, not `.img`).
+  Candidates per game, in priority order: LaunchBox (the index ships in `res://data/art/<id>.tsv`,
+  images at `images.launchbox-app.com`, region preferred, name + alternates), then, where
+  `profiles.json` gives `scansBySerial` (PS2), psxdatacenter by the first serial
+  (`SLPM_661.24` → `SLPM-66124`). `art_changed` carries found/absent/stall;
+  `labelVariants` answers the sources per game; headless stays art-less.
+- Godot 4.7.2: `HTTPRequest` is a **Node** (it must live in the tree — the `Android` autoload
+  owns it), `RESULT_SUCCESS` (no `RESULT_OK`), `request_completed` still `(result, code,
+  headers, body)`.
+- `AndroidServices.is_available()` now treats the Linux plugin as the bridge it stands in for
+  (the carousel's art signals connect; `_demo` falls off).
+- Verified end-to-end in webtop (`/ROMs` mounted, internet works): fixture run 4/5 labels
+  downloaded (FFX JP's LaunchBox disc label scan **rendered on the disc face** in the UI —
+  confirmed by screenshot; FF7 correctly absent, no image in the index for that name);
+  an earlier `/ROMs` run downloaded 4 real-library covers.
+
+## Outstanding (in queue order)
+
+1. **Folder-matching**: the classifier keys on extension+size, so `/ROMs/bios/ps2/*.bin`
+   misreads as N64. Fix: the top-level folder under the games dir is the platform;
+   extension+size only for root-level files. Add `ps3`/`dreamcast` to `_EXTENSIONS`/
+   `profiles.json`/catalog and `rvz` (GC/Wii discs) where the library has them.
+2. **Launch configuration**: `cartouche.conf`, a 1:1 mirror of the Android `playerList`
+   (per-platform players: `command` template with `{file.path}`, `accept` pattern,
+   optional `stop_first`; global `rehearsal = true`; availability = `command -v` in the
+   image; first matching player wins). No `where`/docker axis: one container, cartouche +
+   emulators + display server.
+3. **Compressed CHD serials**: `cdlz` (zlib) hunks decode to nothing (no Zlib in Godot 4.7.2);
+   stored hunks only. Identification then falls to serial/name for those discs.
+4. **Full `/ROMs` scan**: 410 GB, ~744 zips (730 in `amiibo/`) — headless scan of the
+   ps2+psx subset (~2 GB) took a few minutes; the whole tree needs `amiibo/` excluded or a
+   long patience.
+
 ## Design notes
 
 - Matching, per game, in order: cartridge **print CRC32** (iNES 16-byte / 512-byte copier
