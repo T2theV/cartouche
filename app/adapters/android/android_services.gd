@@ -114,6 +114,21 @@ func _ready() -> void:
 	if OS.has_feature("android"):
 		AndroidButtons.follow_android()
 	_load_catalog()
+	if _plugin is LinuxPlugin and LinuxPlugin.argument("play") != "":
+		_cli_launch()
+
+
+## The `--play=GAME_ID` argument: one launch from the command line, the container's way to run a
+## game (headless or through the display server): the library is scanned, the launch rehearsed
+## or run as the conf says, the report the plugin prints stands in the terminal, and the app
+## leaves — the emulator is left to the container.
+func _cli_launch() -> void:
+	var game_id := LinuxPlugin.argument("play")
+	await _request(&"library")
+	var result: Dictionary = await _request(&"launchGame", [{"game_id": game_id, "disc": 0}])
+	var done: bool = result.get("ok", false) == true or result.get("code", "") == &"linux_printed"
+	print("Cartouche (Linux) — --play: %s" % str(result.get("detail", "")))
+	get_tree().quit(0 if done else 1)
 
 
 func is_available() -> bool:

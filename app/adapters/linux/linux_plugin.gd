@@ -556,10 +556,17 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 	# engine re-tokenizes `OS.execute` arguments (a quoted path would split) and holds the
 	# call open until every process with the child's output pipe is gone, so the command line
 	# stands in a file `sh` runs, and the emulator's output goes to a log file, not the pipe:
-	# the emulator is left to the container, and `sh` returns once it is started.
-	var stripped_command: String = command.strip_edges()
+	# the emulator is left to the container, and `sh` returns once it is started. The file
+	# stands quoted (the report keeps it unquoted), and the binary where the conf says,
+	# quoted too when it has a space.
+	var quoted_file := "\"" + file.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+	var run_command: String = _fill(str(selected["command"]), quoted_file)
+	var stripped_command: String = run_command.strip_edges()
 	var rest: String = stripped_command.substr(_binary_token(stripped_command).length())
-	var line: String = binary + rest + " >> /tmp/cartouche-%s.log 2>&1 &" % str(selected["name"])
+	var line_binary := binary
+	if binary.find(" ") >= 0:
+		line_binary = "\"" + binary.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+	var line: String = line_binary + rest + " >> /tmp/cartouche-%s.log 2>&1 &" % str(selected["name"])
 	var script_path: String = "/tmp/cartouche-%s-%d.sh" % [str(selected["name"]), Time.get_ticks_msec()]
 	var sfile := FileAccess.open(script_path, FileAccess.WRITE)
 	if sfile == null:

@@ -111,7 +111,7 @@ func _prepare() -> void:
 	var sleeper := "rehearsal = false\n"
 	sleeper += "path = %s/stubs\n" % WORK
 	sleeper += "\n[ps2]\n"
-	sleeper += "sleeper = sleeper \"{file.path}\"\n"
+	sleeper += "sleeper = sleeper {file.path}\n"
 	sleeper += "sleeper.stop_first = true\n"
 	_write(WORK + "/conf-sleeper.conf", sleeper)
 
@@ -121,11 +121,11 @@ func _conf_body(rehearsal: String) -> String:
 	s += "path = %s/stubs\n" % WORK
 	s += "alias.retroarch = /nowhere/retroarch\n"
 	s += "\n[ps2]\n"
-	s += "retroarch = retroarch \"{file.path}\"\n"
+	s += "retroarch = retroarch {file.path}\n"
 	s += "uninstalled = uninstalled {file.path}\n"
-	s += "onlyiso = pcsx2 \"{file.path}\"\n"
+	s += "onlyiso = pcsx2 {file.path}\n"
 	s += "onlyiso.accept = ^.*\\.iso$\n"
-	s += "pcsx2 = pcsx2 \"{file.path}\"\n"
+	s += "pcsx2 = pcsx2 {file.path}\n"
 	s += "pcsx2.stop_first = true\n"
 	return s
 
