@@ -173,7 +173,9 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   region's file stood in for any; strict maps the tag to the index's region name
   (`usa` → `North America`, `europe` → `Europe`, `japan` → `Japan`, `world` → `World`,
   `australia` → `Australia`) and takes that file or none. The serial source's label stays:
-  the serial itself carries the region (`SLUS` is a USA release).
+  the serial itself carries the region (`SLUS` is a USA release). The stored file's name
+  is the game's, not the label's (`linux_<index>.<ext>`), so a label from the other mode
+  stands in until the art folder is cleared — switch modes with a clear, not over it.
 - The conf's `{file.path}` stands unquoted in the template and the report; the command line
   for `sh` quotes it (and a spaced binary), so a spaced path arrives at the emulator as one
   argument.
