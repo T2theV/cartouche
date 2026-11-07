@@ -90,6 +90,26 @@ func _ready() -> void:
 	var unsupported_count: int = unsupported.get("count", 0)
 	_check(unsupported_count == 2, "readme.txt and the bios are the unsupported files, got %d" % unsupported_count)
 
+	# -- the label's region ----------------------------------------------------------
+	# Without the flag the first region's file stands in for any; with
+	# `--label-region=strict` (here through set_label_region) it is the game's
+	# own region's, or nothing.
+	var smw_loose: Array = plugin._art_candidates(smw)
+	var smw_loose_file: String = str(smw_loose[0]["file"]) if smw_loose.size() > 0 else ""
+	_check(smw_loose_file == "a8dfd64e-9c01-4889-8be9-34bcf856cfab.jpg", "no flag: the first region's file (Brazil), got %s" % smw_loose_file)
+	LinuxPlugin.set_label_region("strict")
+	var smw_strict: Array = plugin._art_candidates(smw)
+	var smw_strict_file: String = str(smw_strict[0]["file"]) if smw_strict.size() > 0 else ""
+	_check(smw_strict_file == "a4906ecc-e7dd-4bda-ab8e-b57a461794d0.png", "strict: the USA game's North America label, got %s" % smw_strict_file)
+	var ffx_strict: Array = plugin._art_candidates(ffx)
+	var ffx_strict_file: String = str(ffx_strict[0]["file"]) if ffx_strict.size() > 0 else ""
+	_check(ffx_strict_file == "r2_c3b87db1-9fa1-4617-a78b-509963c2df52.png", "strict: the Japan game's Japan label, got %s" % ffx_strict_file)
+	LinuxPlugin.set_label_region("")
+	var smw_again: Array = plugin._art_candidates(smw)
+	var smw_again_file: String = str(smw_again[0]["file"]) if smw_again.size() > 0 else ""
+	_check(smw_again_file == "a8dfd64e-9c01-4889-8be9-34bcf856cfab.jpg", "flag off again: the first region's file, got %s" % smw_again_file)
+	_check(LinuxPlugin._label_region_key("USA") == "North America", "the tag maps to the index's region name")
+
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})
 	var result_code: String = str(result.get("code", ""))

@@ -167,6 +167,13 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
 - `--list` (after `--`, a bare flag): the library's terminal report — one line per game,
   `id  platform  identified  title` — then quits (0). The console's way to see what the
   scan holds without a display.
+- `--label-region=strict` (after `--`; a bare `--label-region` counts): enforce the game's
+  own region on its label — no any-region fallback. Without it, the game's region is only a
+  preference the index keys never carry (`usa` is not `North America`), so the first
+  region's file stood in for any; strict maps the tag to the index's region name
+  (`usa` → `North America`, `europe` → `Europe`, `japan` → `Japan`, `world` → `World`,
+  `australia` → `Australia`) and takes that file or none. The serial source's label stays:
+  the serial itself carries the region (`SLUS` is a USA release).
 - The conf's `{file.path}` stands unquoted in the template and the report; the command line
   for `sh` quotes it (and a spaced binary), so a spaced path arrives at the emulator as one
   argument.

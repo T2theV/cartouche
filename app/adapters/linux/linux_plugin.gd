@@ -111,6 +111,7 @@ static var _dir_override := ""
 static var _title_lists: Dictionary = {}
 static var _print_lists: Dictionary = {}
 static var _serial_index: Dictionary = {}
+static var _label_region := ""
 static var _crc_table: PackedInt32Array = []
 static var _config_override := ""
 static var _config_path := ""
@@ -1572,6 +1573,32 @@ func _art_index_for(platform_id: String) -> Dictionary:
 	return found
 
 
+## The test's `--label-region` value (the way `set_config` stands for the conf's).
+static func set_label_region(value: String) -> void:
+	_label_region = value
+
+## Whether a label must be the game's own region: `--label-region=strict` (a bare
+## `--label-region` counts) turns the any-region fallback off.
+static func _label_region_strict() -> bool:
+	var v: String = _label_region if _label_region != "" else argument("label-region")
+	return v == "strict" or v == "1"
+
+## The art index's region name for a game's region tag: `usa` is the index's `North
+## America`; the empty string when the tag names no indexed region (strict: no label).
+static func _label_region_key(region: String) -> String:
+	match _normalize(region):
+		"usa", "us", "north america", "na":
+			return "North America"
+		"europe", "eu":
+			return "Europe"
+		"japan", "jp", "jpn":
+			return "Japan"
+		"world", "worldwide":
+			return "World"
+		"australia", "au":
+			return "Australia"
+	return ""
+
 ## The candidates for [param game]'s label, in priority order, discs' LaunchBox's scan first
 ## and, on the serial platforms, the serial source's: each `{"source", "source_name",
 ## "region", "url", "file"}`.
@@ -1590,7 +1617,15 @@ func _art_candidates(game: Dictionary) -> Array:
 		if not game_regions.is_empty():
 			region = str(game_regions[0])
 		var file := ""
-		if images.has(region):
+		if _label_region_strict():
+			# Enforced: the label is the game's own region's, or there is none.
+			if images.has(region):
+				file = str(images[region])
+			else:
+				var mapped: String = _label_region_key(region)
+				if mapped != "" and images.has(mapped):
+					file = str(images[mapped])
+		elif images.has(region):
 			file = str(images[region])
 		else:
 			for r: String in images:
