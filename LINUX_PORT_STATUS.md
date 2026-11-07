@@ -168,14 +168,17 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   `id  platform  identified  title` — then quits (0). The console's way to see what the
   scan holds without a display.
 - `--label-region=strict` (after `--`; a bare `--label-region` counts): enforce the game's
-  own region on its label — no any-region fallback. Without it, the game's region is only a
-  preference the index keys never carry (`usa` is not `North America`), so the first
-  region's file stood in for any; strict maps the tag to the index's region name
+  own region on its label — no any-region fallback. Without it, the first region's file
+  stood in for any. Strict maps the game's region tag to the art index's region name
   (`usa` → `North America`, `europe` → `Europe`, `japan` → `Japan`, `world` → `World`,
-  `australia` → `Australia`) and takes that file or none. The serial source's label stays:
-  the serial itself carries the region (`SLUS` is a USA release). The stored file's name
-  is the game's, not the label's (`linux_<index>.<ext>`), so a label from the other mode
-  stands in until the art folder is cleared — switch modes with a clear, not over it.
+  `australia` → `Australia`; a multi-region tag like `usa, asia` stands for its first
+  mappable entry) and takes that file or none. A name's region is its last ` (tag)` that
+  is a region — ` (USA, Asia)` is one, ` (Rev 2)` and ` (En,Fr,De,Es,It)` are not — so a
+  game with no region tag (unidentified, tagless name) has no label under strict. The
+  serial source's label stays: the serial itself carries the region (`SLUS` is a USA
+  release). The stored file's name is the game's, not the label's (`linux_<index>.<ext>`),
+  so a label from the other mode stands in until the art folder is cleared — switch modes
+  with a clear, not over it.
 - The conf's `{file.path}` stands unquoted in the template and the report; the command line
   for `sh` quotes it (and a spaced binary), so a spaced path arrives at the emulator as one
   argument.
