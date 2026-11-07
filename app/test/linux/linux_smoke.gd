@@ -109,6 +109,7 @@ func _ready() -> void:
 	var smw_again_file: String = str(smw_again[0]["file"]) if smw_again.size() > 0 else ""
 	_check(smw_again_file == "a8dfd64e-9c01-4889-8be9-34bcf856cfab.jpg", "flag off again: the first region's file, got %s" % smw_again_file)
 	_check(LinuxPlugin._label_region_key("USA") == "North America", "the tag maps to the index's region name")
+	_check(LinuxPlugin._label_region_key("USA, Asia") == "North America", "a multi-region tag stands for its first")
 
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})

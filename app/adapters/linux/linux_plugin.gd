@@ -1584,19 +1584,21 @@ static func _label_region_strict() -> bool:
 	return v == "strict" or v == "1"
 
 ## The art index's region name for a game's region tag: `usa` is the index's `North
-## America`; the empty string when the tag names no indexed region (strict: no label).
+## America`; a multi-region tag (`usa, asia`) stands for its first; the empty string when
+## the tag names no indexed region (strict: no label).
 static func _label_region_key(region: String) -> String:
-	match _normalize(region):
-		"usa", "us", "north america", "na":
-			return "North America"
-		"europe", "eu":
-			return "Europe"
-		"japan", "jp", "jpn":
-			return "Japan"
-		"world", "worldwide":
-			return "World"
-		"australia", "au":
-			return "Australia"
+	for entry: String in _normalize(region).split(","):
+		match entry.strip_edges():
+			"usa", "us", "north america", "na":
+				return "North America"
+			"europe", "eu":
+				return "Europe"
+			"japan", "jp", "jpn":
+				return "Japan"
+			"world", "worldwide":
+				return "World"
+			"australia", "au":
+				return "Australia"
 	return ""
 
 ## The candidates for [param game]'s label, in priority order, discs' LaunchBox's scan first
