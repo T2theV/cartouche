@@ -1511,6 +1511,7 @@ var _art_done := 0
 var _art_stall := ""
 var _art_http: Variant = null
 var _art_job: Dictionary = {}
+var _art_pacing := false
 var _art_source_by_game: Dictionary = {}
 var _ss: ScreenScraper = null
 var _ss_system: Dictionary = {}
@@ -1790,7 +1791,7 @@ func _art_game_order(focus: PackedStringArray) -> PackedStringArray:
 ## told at once, the rest downloaded one by one, LaunchBox's then the serial source's,
 ## [signal art_changed] the progress, a found, or the absences.
 func artFocus(focus: PackedStringArray) -> void:
-	if DisplayServer.get_name() == "headless" or _art_http != null:
+	if DisplayServer.get_name() == "headless" or _art_http != null or _art_pacing:
 		return
 	_ensure_scanned()
 	DirAccess.make_dir_recursive_absolute(art_dir())
@@ -1839,15 +1840,22 @@ func _art_next() -> void:
 		_art_next()
 		return
 	var candidate: Dictionary = candidates[attempt]
-	if str(candidate["source"]) == _ART_SOURCE_SCREENSCRAPER and (
-		_ss == null or not _ss.admit()
-	):
-		# ScreenScraper is not open (its quota spent, its key refused): the candidate is not
-		# asked; the carousel's next focus pass will look for it again.
-		job["attempt"] = attempt + 1
-		_art_jobs.push_front(job)
-		_art_next()
-		return
+	if str(candidate["source"]) == _ART_SOURCE_SCREENSCRAPER:
+		if _ss == null or not _ss.admit():
+			# ScreenScraper is not open (its quota spent, its key refused): the candidate is not
+			# asked; the carousel's next focus pass will look for it again.
+			job["attempt"] = attempt + 1
+			_art_jobs.push_front(job)
+			_art_next()
+			return
+		var wait_ms := _ss.pace_wait_ms()
+		if wait_ms > 0:
+			# The server's pace not kept yet: the candidate holds, and the pump waits for it.
+			_art_jobs.push_front(job)
+			_art_pacing = true
+			_ss_pace_then_pump(wait_ms)
+			return
+		_ss.note_request()
 	var http := HTTPRequest.new()
 	# Godot 4.7's HTTPRequest is a Node: the AndroidServices autoload keeps it in the tree.
 	var loop: Variant = Engine.get_main_loop()
@@ -1868,6 +1876,21 @@ func _art_next() -> void:
 	http.request_completed.connect(_on_art_request.bind(http))
 	_art_http = http
 	http.request(str(candidate["url"]))
+
+
+## The pace's wait, then the pump: the scene tree's timer, the queue's hold over.
+func _ss_pace_then_pump(wait_ms: int) -> void:
+	var loop: Variant = Engine.get_main_loop()
+	if not (loop is SceneTree):
+		# No scene tree (a test, a headless run): the pace is not kept, the queue holds on.
+		_art_pacing = false
+		_art_next()
+		return
+	var tree: SceneTree = loop
+	var timer: SceneTreeTimer = tree.create_timer(float(wait_ms) / 1000.0)
+	await timer.timeout
+	_art_pacing = false
+	_art_next()
 
 
 func _on_art_request(result: int, response_code: int, _headers: PackedStringArray,

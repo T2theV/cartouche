@@ -13,6 +13,9 @@ extends RefCounted
 ## are there, name the member the requests go as. The credentials go into the request at
 ## request time only: nothing but this file holds them.
 ##
+## The pace the server asked of its clients (a 1.0 of theirs) is kept at a 1.2 of ours: no
+## request goes sooner from the last, `pace_wait_ms` the wait, `note_request` the ask.
+##
 ## Answers, as the server gives them: the image's bytes, or a 200 of text, `NOMEDIA` the
 ## game's absence of the texture and a wrong key its refusal; a 429 spends the back-off, a
 ## 430 or 431 the day (the quota's), a 401, 403, or 426 the key for the run.
@@ -21,6 +24,7 @@ const _TABLES := "res://data/screenscraper"
 const _API := "https://api.screenscraper.fr/api2/mediaJeu.php"
 const _SIZE := 1024
 const _BACK_OFF_MS := 10_000
+const _PACE_MS := 1200
 const _NO_MEDIA := "NOMEDIA"
 const _BAD_KEY := "identifiants développeur"
 const _LONGEST_TEXT := 1024
@@ -40,6 +44,7 @@ var _tables: Dictionary = {}
 var _backoff_until := 0
 var _closed_day := ""
 var _refused := false
+var _last_request := 0
 
 
 ## Where the key is read: `set_key_path`'s, `--ss-key=`'s, the environment's, or the user's
@@ -99,6 +104,18 @@ func admit() -> bool:
 	return open() and Time.get_ticks_msec() >= _backoff_until
 
 
+## The server's pace kept: [param _PACE_MS] from the last request the app asked, like the
+## front-ends that asked the server for it (a 1.0 of theirs, a 1.2 of ours).
+func pace_wait_ms() -> int:
+	var gap: int = Time.get_ticks_msec() - _last_request
+	return _PACE_MS - gap if _last_request != 0 and gap < _PACE_MS else 0
+
+
+## The request's ask told, the pace's start.
+func note_request() -> void:
+	_last_request = Time.get_ticks_msec()
+
+
 ## The texture's code of [param codes] for [param region]: the region's, then, without
 ## [param strict], the known codes' and then the table's first; none when strict has no own.
 static func texture_code(codes: Array, region: String, strict: bool) -> String:
@@ -135,7 +152,7 @@ func request_url(system_id: int, game_id: int, code: String) -> String:
 	params.append("media=support-texture(" + code + ")")
 	params.append("maxwidth=" + str(_SIZE))
 	params.append("maxheight=" + str(_SIZE))
-	return _API + "?" + ",".join(params)
+	return _API + "?" + "&".join(params)
 
 
 ## The table's row of [param platform_id] under one of [param keys] (the reference names',
@@ -243,3 +260,4 @@ func reset() -> void:
 	_backoff_until = 0
 	_closed_day = ""
 	_refused = false
+	_last_request = 0

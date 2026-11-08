@@ -128,7 +128,10 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   under the `data/*.tsv` filter) are read by the reference names; a request is one image —
   `api2/mediaJeu.php?…&systemeid=<profile's screenScraperSystem>&jeuid=<the table's game>
   &media=support-texture(<code>)&maxwidth=1024&maxheight=1024`, the key's
-  `devid`/`devpassword`/`softname` (and a member's `ssid`/`sspassword`, when both) in it.
+  `devid`/`devpassword`/`softname` (and a member's `ssid`/`sspassword`, when both) in it —
+  the parameters ampersand-separated (the server reads each one on its own), the member's
+  `ssid` its username (not the e-mail). The pace the server asked of its clients (a 1.0 of
+  theirs) is kept at a 1.2 of ours: no request goes sooner from the last.
   The key's file: `--ss-key=PATH` → `CARTOUCHE_SS_KEY` → `user://sskey.json`; without it the
   source is off and no request is ever sent (as the Android builds without a key).
 - The candidate sits between LaunchBox's and the serial source's, and only when a key's
@@ -149,8 +152,12 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   Barbie by the art row's bridge — the texture's codes, the request's URL, the answers'
   states) and 14 smoke checks on the Tetris fixture (`jeuid=1291`, `systemeid=3`,
   `media=support-texture(us)`, the NOMEDIA, the refusal, the 429's and the 430's waits).
-  Not verified against the server: no key in this environment — the request path is
-  untested end-to-end until a key's file is.
+  Against the server, with a key's file (a developer key and a member's `ssid`/
+  `sspassword`): the unlabeled games the tables list come back as images, one per the pace
+  (Rush 2049 and Barbie among them) — the request's path is live end-to-end. The developer
+  key is the front-end's: the open-source front-ends ship one in their source (ES-DE's in
+  its `ScreenScraper.h`, Skyscraper's scrambled in its `strtools`), and the member's
+  `ssid`/`sspassword` name the account the requests go as.
 
 ## Folder matching (implemented, verified on the real /ROMs)
 

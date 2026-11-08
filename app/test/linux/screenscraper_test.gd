@@ -89,6 +89,11 @@ func test_the_request_carries_the_key_the_system_the_game_and_the_texture() -> v
 	assert_bool("systemeid=10" in url).is_true()
 	assert_bool("jeuid=36995" in url).is_true()
 	assert_bool("media=support-texture(us)" in url).is_true()
+	# The parameters are ampersand-separated: the server reads each one on its own.
+	assert_bool("devid=test&devpassword=test-pass" in url).is_true()
+	assert_bool("systemeid=10&jeuid=36995" in url).is_true()
+	assert_bool("media=support-texture(us)&maxwidth=1024" in url).is_true()
+	assert_bool("," not in url).is_true()
 	assert_that(_ss.request_url(10, 36995, "")).is_equal("")
 	assert_that(_ss.request_url(0, 36995, "us")).is_equal("")
 
