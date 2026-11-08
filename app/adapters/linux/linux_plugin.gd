@@ -645,6 +645,7 @@ func _read_data() -> void:
 		var medium: Dictionary = profile.get("medium", {})
 		_medium_of[platform_id] = medium.get("default", "")
 		_min_bytes[platform_id] = profile.get("minimumGameBytes", 0)
+		_ss_system[platform_id] = str(profile.get("screenScraperSystem", 0)).to_int()
 		var scans_raw: Variant = profile.get("scansBySerial", {})
 		var scans: Dictionary = {}
 		if scans_raw is Dictionary:
@@ -1499,8 +1500,10 @@ const _ART_INDEX_DIR := "res://data/art"
 const _ART_IMAGES := "https://images.launchbox-app.com/"
 const _ART_SOURCE_LAUNCHBOX := "launchbox"
 const _ART_SOURCE_PSDATACENTER := "psxdatacenter"
+const _ART_SOURCE_SCREENSCRAPER := "screenscraper"
 
 var _art_index: Dictionary = {}
+var _art_row_names: Dictionary = {}
 var _art_scans_url: Dictionary = {}
 var _art_jobs: Array = []
 var _art_total := 0
@@ -1509,6 +1512,8 @@ var _art_stall := ""
 var _art_http: Variant = null
 var _art_job: Dictionary = {}
 var _art_source_by_game: Dictionary = {}
+var _ss: ScreenScraper = null
+var _ss_system: Dictionary = {}
 
 
 ## The art folder: `--art-dir=PATH`, the `CARTOUCHE_ART_DIR` environment, or the user's
@@ -1547,6 +1552,7 @@ func _art_index_for(platform_id: String) -> Dictionary:
 	if _art_index.has(platform_id):
 		return _art_index[platform_id]
 	var found: Dictionary = {}
+	var rows: Dictionary = {}
 	var text_path := _ART_INDEX_DIR.path_join(platform_id + ".tsv")
 	if FileAccess.file_exists(text_path):
 		var data := FileAccess.get_file_as_bytes(text_path)
@@ -1555,7 +1561,7 @@ func _art_index_for(platform_id: String) -> Dictionary:
 			var clean: String = line.rstrip("\r")
 			if clean.is_empty() or clean.begins_with("#"):
 				continue
-			var parts := clean.split("\t")
+			var parts := clean.split("	")
 			if parts.size() < 3:
 				continue
 			var images: Dictionary = {}
@@ -1566,10 +1572,17 @@ func _art_index_for(platform_id: String) -> Dictionary:
 				images[pair.substr(0, eq)] = pair.substr(eq + 1)
 			if images.is_empty():
 				continue
-			found[_normalize(parts[0])] = images
+			var names: Array = [parts[0]]
 			for alt: String in parts[1].split("|"):
 				if not alt.is_empty():
+					names.append(alt)
 					found[_normalize(alt)] = images
+			found[_normalize(parts[0])] = images
+			for raw: String in names:
+				var key: String = _normalize(raw)
+				if not rows.has(key):
+					rows[key] = names
+	_art_row_names[platform_id] = rows
 	_art_index[platform_id] = found
 	return found
 
@@ -1610,15 +1623,17 @@ func _art_candidates(game: Dictionary) -> Array:
 	var platform_id := str(game["platform_id"])
 	var index: Dictionary = _art_index_for(platform_id)
 	var images: Dictionary = {}
+	var hit := ""
 	for k: String in _title_keys(str(game["title"])):
 		if index.has(k):
 			images = index[k]
+			hit = k
 			break
+	var game_regions: Array = game.get("regions", [])
+	var region := ""
+	if not game_regions.is_empty():
+		region = str(game_regions[0])
 	if not images.is_empty():
-		var region := ""
-		var game_regions: Array = game.get("regions", [])
-		if not game_regions.is_empty():
-			region = str(game_regions[0])
 		var file := ""
 		if _label_region_strict():
 			# Enforced: the label is the game's own region's, or there is none.
@@ -1637,11 +1652,44 @@ func _art_candidates(game: Dictionary) -> Array:
 		if not file.is_empty():
 			out.append({"source": _ART_SOURCE_LAUNCHBOX, "source_name": "LaunchBox",
 				"region": region, "url": _ART_IMAGES + file, "file": file})
+	var ss := _art_ss_candidate(platform_id, game, hit, region)
+	if not ss.is_empty():
+		out.append(ss)
 	var serial_url := _art_serial_url(platform_id, game)
 	if not serial_url.is_empty():
 		out.append({"source": _ART_SOURCE_PSDATACENTER, "source_name": "PlayStation DataCenter",
 			"region": "", "url": serial_url, "file": serial_url.get_slice("/", -1)})
 	return out
+
+
+## The ScreenScraper candidate of [param game], when the key's file is, the source open, and
+## its platform's table lists a release for it: the table's game and its texture of
+## [param region]; [param hit], the art index's key the game took its row under, is the
+## reference names' bridge to the table.
+func _art_ss_candidate(platform_id: String, game: Dictionary, hit: String, region: String) -> Dictionary:
+	if _ss == null:
+		_ss = ScreenScraper.new()
+	if not _ss.enabled() or not _ss.open():
+		return {}
+	var keys: Array = _title_keys(str(game["title"]))
+	var rows_of: Dictionary = _art_row_names.get(platform_id, {})
+	var names: Array = rows_of.get(hit, [])
+	for raw: String in names:
+		for key: String in ScreenScraper.row_keys(raw):
+			if not keys.has(key):
+				keys.append(key)
+	var row: Dictionary = _ss.lookup(platform_id, keys)
+	if row.is_empty():
+		return {}
+	var codes: Array = row["codes"]
+	var game_id: int = str(row["game"]).to_int()
+	var code := ScreenScraper.texture_code(codes, region, _label_region_strict())
+	var system_id: int = str(_ss_system.get(platform_id, 0)).to_int()
+	var url := _ss.request_url(system_id, game_id, code)
+	if url.is_empty():
+		return {}
+	return {"source": _ART_SOURCE_SCREENSCRAPER, "source_name": "ScreenScraper",
+		"region": region, "url": url, "file": "label"}
 
 
 ## The title's keys, the index's way: itself, then with its trailing `(Region)` and `(Disc N)`
@@ -1791,6 +1839,15 @@ func _art_next() -> void:
 		_art_next()
 		return
 	var candidate: Dictionary = candidates[attempt]
+	if str(candidate["source"]) == _ART_SOURCE_SCREENSCRAPER and (
+		_ss == null or not _ss.admit()
+	):
+		# ScreenScraper is not open (its quota spent, its key refused): the candidate is not
+		# asked; the carousel's next focus pass will look for it again.
+		job["attempt"] = attempt + 1
+		_art_jobs.push_front(job)
+		_art_next()
+		return
 	var http := HTTPRequest.new()
 	# Godot 4.7's HTTPRequest is a Node: the AndroidServices autoload keeps it in the tree.
 	var loop: Variant = Engine.get_main_loop()
@@ -1822,6 +1879,17 @@ func _on_art_request(result: int, response_code: int, _headers: PackedStringArra
 	var candidates: Array = job["candidates"]
 	var attempt: int = job["attempt"]
 	var candidate: Dictionary = candidates[attempt]
+	if str(candidate["source"]) == _ART_SOURCE_SCREENSCRAPER and result == HTTPRequest.RESULT_SUCCESS:
+		# ScreenScraper's absent and its refusals come as 200s of text; only its image bytes
+		# go to the art folder, the rest to the next candidate.
+		var kind := _ss.answer(response_code, body)
+		print("Cartouche plugin: screenscraper: %s (http %d)" % [kind, response_code])
+		if kind != "image":
+			http.queue_free()
+			job["attempt"] = attempt + 1
+			_art_jobs.push_front(job)
+			_art_next()
+			return
 	if result == HTTPRequest.RESULT_SUCCESS and response_code == 200 and not body.is_empty():
 		var path := art_dir().path_join(_art_file_name(game_id, str(candidate["file"])))
 		var file := FileAccess.open(path, FileAccess.WRITE)

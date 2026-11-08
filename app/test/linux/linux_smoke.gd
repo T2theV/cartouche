@@ -157,6 +157,48 @@ func _ready() -> void:
 	var punch_file: String = str(punch_cands[0]["file"]) if punch_cands.size() > 0 else ""
 	_check(punch_file == "a951c3f7-1261-4059-842e-d379fe042c19.png", "no flag: the exclamation-punctuated scene name finds the plain row's first region (Europe), got %s" % punch_file)
 
+	# -- screenscraper --------------------------------------------------------
+	# The table under the app lists the release by its name, the key's file turns the
+	# source on, and its answers classify as they come: the image's bytes, the absences,
+	# and the refusals, the quota's and the back-off's waits.
+	var ss_key := ProjectSettings.globalize_path("user://ss_key_smoke.json")
+	var ss_key_file := FileAccess.open(ss_key, FileAccess.WRITE)
+	ss_key_file.store_string("{\"devid\": \"smoke\", \"devpassword\": \"smoke-pass\", \"softname\": \"CartoucheSmoke\"}")
+	ss_key_file.close()
+	plugin._ss.set_key_path(ss_key)
+	_check(plugin._ss.enabled(), "screenscraper: the key's file enables the source")
+	var tetris_cands: Array = plugin._art_candidates(tetris)
+	var ss_cand: Dictionary = {}
+	for c: Dictionary in tetris_cands:
+		if str(c["source"]) == "screenscraper":
+			ss_cand = c
+	_check(not ss_cand.is_empty(), "screenscraper: the table-listed release gets its candidate")
+	if not ss_cand.is_empty():
+		_check("jeuid=1291" in str(ss_cand["url"]), "screenscraper: the request's game is the table's")
+		_check("systemeid=3" in str(ss_cand["url"]), "screenscraper: the request's system is the profile's")
+		_check("media=support-texture(us)" in str(ss_cand["url"]), "screenscraper: the texture is the region's")
+	var ss_nomedia := ScreenScraper.new()
+	ss_nomedia.set_key_path(ss_key)
+	_check(ss_nomedia.answer(200, "NOMEDIA".to_utf8_buffer()) == "nomedia", "screenscraper: NOMEDIA is the absence")
+	var ss_refused := ScreenScraper.new()
+	ss_refused.set_key_path(ss_key)
+	_check(ss_refused.answer(200, "Erreur de login : Vérifier vos identifiants développeur !".to_utf8_buffer()) == "refused", "screenscraper: the wrong key is the refusal")
+	_check(not ss_refused.open(), "screenscraper: a refused key is off for the run")
+	var ss_throttled := ScreenScraper.new()
+	ss_throttled.set_key_path(ss_key)
+	_check(ss_throttled.answer(429, PackedByteArray()) == "throttled", "screenscraper: the 429's answer")
+	_check(not ss_throttled.admit(), "screenscraper: the 429's back-off waits")
+	var ss_closed := ScreenScraper.new()
+	ss_closed.set_key_path(ss_key)
+	_check(ss_closed.answer(430, PackedByteArray()) == "closed", "screenscraper: the 430's answer")
+	_check(not ss_closed.open(), "screenscraper: the spent quota closes the day")
+	var ss_image := ScreenScraper.new()
+	ss_image.set_key_path(ss_key)
+	_check(ss_image.answer(200, PackedByteArray([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) == "image", "screenscraper: the image's bytes are its image")
+	plugin._ss.reset()
+	_check(not plugin._ss.enabled(), "screenscraper: without the key's file, the source is off")
+	DirAccess.remove_absolute(ss_key)
+
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})
 	var result_code: String = str(result.get("code", ""))

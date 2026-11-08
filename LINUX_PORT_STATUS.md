@@ -53,6 +53,10 @@ cd /opt/data/cartouche-linux/app
   -- --games-dir=/opt/data/cartouche-linux/roms
 # the app itself (any display; --headless also works):
 /opt/data/bin/godot --headless --path . -- --games-dir=/opt/data/cartouche-linux/roms
+# ScreenScraper's key (absent, the source is off): --ss-key=PATH, the CARTOUCHE_SS_KEY
+# environment, or user://sskey.json, {"devid","devpassword","softname"(,"ssid","sspassword")}:
+cp /dev/null ~/.local/share/godot/app_userdata/Cartouche/sskey.json
+#   and fill it; the requests go to api.screenscraper.fr/api2/mediaJeu.php.
 # regenerate fixtures:
 python3 /opt/data/cartouche-linux/make_fixtures.py
 # exports:
@@ -115,6 +119,38 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   downloaded (FFX JP's LaunchBox disc label scan **rendered on the disc face** in the UI —
   confirmed by screenshot; FF7 correctly absent, no image in the index for that name);
   an earlier `/ROMs` run downloaded 4 real-library covers.
+
+## ScreenScraper (implemented, the labels the bundled indexes lack)
+
+- `app/adapters/linux/screenscraper.gd` — the source, as the Android app's
+  `ScreenScraperFetch.kt` does it in miniature: the tables under `res://data/screenscraper`
+  (one `.tsv` per platform, `release<TAB>gameid<TAB>texture codes`, shipped in the export
+  under the `data/*.tsv` filter) are read by the reference names; a request is one image —
+  `api2/mediaJeu.php?…&systemeid=<profile's screenScraperSystem>&jeuid=<the table's game>
+  &media=support-texture(<code>)&maxwidth=1024&maxheight=1024`, the key's
+  `devid`/`devpassword`/`softname` (and a member's `ssid`/`sspassword`, when both) in it.
+  The key's file: `--ss-key=PATH` → `CARTOUCHE_SS_KEY` → `user://sskey.json`; without it the
+  source is off and no request is ever sent (as the Android builds without a key).
+- The candidate sits between LaunchBox's and the serial source's, and only when a key's
+  file is: LaunchBox first (the 98 labels already stored are untouched), ScreenScraper
+  second, psxdatacenter last. The lookups come in two bridges: the game's own title keys,
+  and the art index's row and its alternates as the reference names' bridge — a ROM named
+  `Barbie Groovy Games (U)` reaches the table's `Barbie Software - Groovy Games (USA)` row
+  by the row's name, not its own. The texture's code is the game's region's
+  (`North America`→`us`, `Europe`→`eu`, `Japan`→`jp`, `World`→`wor`), then, loose, the
+  known codes and the table's first; `--label-region=strict` asks only the own region's.
+- Answers, as the server gives them (the absent and the refusals are 200s of text): the
+  image's bytes are stored as the label (the reader's byte-sniff takes a JPEG under a
+  `.png` name), `NOMEDIA` is the absence, `identifiants développeur` the key's refusal —
+  off for the run — a 429 spends a 10 s back-off, a 430 or 431 the day's quota, a 401/403/426
+  the run. A 429 or a closed day is skipped, not retried: the carousel's next focus pass
+  looks again (the source's state is the run's, as the requests' count on it).
+- Verified: 12 GdUnit cases (the tables' lookups — Rush 2049 by its ROM's title keys,
+  Barbie by the art row's bridge — the texture's codes, the request's URL, the answers'
+  states) and 14 smoke checks on the Tetris fixture (`jeuid=1291`, `systemeid=3`,
+  `media=support-texture(us)`, the NOMEDIA, the refusal, the 429's and the 430's waits).
+  Not verified against the server: no key in this environment — the request path is
+  untested end-to-end until a key's file is.
 
 ## Folder matching (implemented, verified on the real /ROMs)
 
