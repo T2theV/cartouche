@@ -1650,6 +1650,9 @@ func _title_keys(title: String) -> Array:
 	var stripped := _tags_stripped(title)
 	if stripped != title:
 		keys.append(_normalize(stripped))
+	var core := _core_title(title)
+	if core != title:
+		keys.append(_normalize(core))
 	return keys
 
 
@@ -1661,6 +1664,16 @@ static func _tags_stripped(title: String) -> String:
 			break
 		t = t.substr(0, cut)
 	return t.strip_edges()
+
+
+## [param title] in the reference lists' plain form: its scene-release `[tag]` groups and its
+## trailing `(tag)` groups off (`Halo 3 [RF][ENG]` is `Halo 3`), so a scene file name finds the
+## plain row the reference lists carry.
+static func _core_title(title: String) -> String:
+	var re := RegEx.new()
+	re.compile("\\[[^\\[\\]]*\\]")
+	var no_brackets := re.sub(title, "", true)
+	return _tags_stripped(no_brackets)
 
 
 ## The serial source's URL of [param game]'s first serial, by [param platform_id]'s

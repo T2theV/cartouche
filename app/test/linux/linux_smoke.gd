@@ -35,10 +35,10 @@ func _ready() -> void:
 	var library_holds_games: bool = library is Dictionary and not library.is_empty()
 	_check(library_holds_games, "library is JSON")
 	var games: Array = library.get("games", [])
-	_check(games.size() == 10, "10 games found, got %d" % games.size())
+	_check(games.size() == 11, "11 games found, got %d" % games.size())
 	var shelves_found: Dictionary = library.get("shelves", {})
 	var shelves: Array = shelves_found.get("shelves", [])
-	_check(shelves.size() == 8, "8 shelves, got %d" % shelves.size())
+	_check(shelves.size() == 9, "9 shelves, got %d" % shelves.size())
 	var by_title := {}
 	for game: Dictionary in games:
 		var game_title: String = str(game["title"])
@@ -135,6 +135,16 @@ func _ready() -> void:
 	var nexus_loose: Array = plugin._art_candidates(nexus)
 	var nexus_loose_file: String = str(nexus_loose[0]["file"]) if nexus_loose.size() > 0 else ""
 	_check(nexus_loose_file == "aeef04b6-fd7d-45d6-8c1f-95f78b30df9b.png", "no flag: the first region's file, got %s" % nexus_loose_file)
+	# A scene file name (`Halo 3 [RF][ENG]`) matches no reference row, yet its label is found:
+	# the core title (its `[tag]` groups off) is the plain row the reference lists carry.
+	var halo: Dictionary = by_title.get("Halo 3 [RF][ENG]", {})
+	var halo_platform: String = str(halo.get("platform_id", ""))
+	_check(halo_platform == "xbox360", "the folder makes it a xbox360 game, got %s" % halo_platform)
+	var halo_identified: bool = halo.get("identified", false)
+	_check(not halo_identified, "Halo 3 [RF][ENG] stays unidentified (its name matches no reference row)")
+	var halo_cands: Array = plugin._art_candidates(halo)
+	var halo_file: String = str(halo_cands[0]["file"]) if halo_cands.size() > 0 else ""
+	_check(halo_file == "r2_733e1933-1b7b-431b-8413-1162d2ef7005.png", "no flag: the scene name finds the plain row's first region (Europe), got %s" % halo_file)
 
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})
