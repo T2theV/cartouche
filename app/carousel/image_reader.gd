@@ -67,7 +67,7 @@ func cancel_all() -> void:
 ## Runs on a worker thread; hands the image, or none, to the main thread.
 func _read(key: String, path: String, title: String, ticket: int) -> void:
 	var started := Time.get_ticks_usec()
-	var image := Image.load_from_file(path)
+	var image := _load_image(path)
 	if image and not image.is_empty():
 		# Godot's renderer would turn three-byte colours into four on the main thread.
 		if image.get_format() == Image.FORMAT_RGB8:
@@ -79,6 +79,23 @@ func _read(key: String, path: String, title: String, ticket: int) -> void:
 		image = null
 		Diagnostics.trace("art", "%s: %s could not be read" % [title, path])
 	_on_read.call_deferred(key, ticket, image)
+
+
+## The image at [param path], its format by its bytes, not its name: the source names a JPEG a
+## `.png` (and `Image.load_from_file` trusts the name), so a sniffed PNG or JPEG, the name for
+## the rest.
+static func _load_image(path: String) -> Image:
+	var data := FileAccess.get_file_as_bytes(path)
+	if not data.is_empty():
+		var image := Image.new()
+		var err: Error = FAILED
+		if data.size() >= 4 and data[0] == 0x89 and data[1] == 0x50 and data[2] == 0x4E and data[3] == 0x47:
+			err = image.load_png_from_buffer(data)
+		elif data.size() >= 3 and data[0] == 0xFF and data[1] == 0xD8 and data[2] == 0xFF:
+			err = image.load_jpg_from_buffer(data)
+		if err == OK:
+			return image
+	return Image.load_from_file(path)
 
 
 func _on_read(key: String, ticket: int, image: Image) -> void:
