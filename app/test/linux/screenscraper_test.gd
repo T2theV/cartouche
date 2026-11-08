@@ -138,3 +138,9 @@ func test_the_absence_is_kept_per_run() -> void:
 	assert_bool(ss.is_no_media("1291:eu")).is_false()
 	ss.reset()
 	assert_bool(ss.is_no_media("1291:us")).is_false()
+
+
+func test_the_period_is_the_separator_too() -> void:
+	assert_that(LinuxPlugin._normalize("L.A. Rush")).is_equal("la rush")
+	# The row's way: the tags off, then the keys' without the period.
+	assert_that(LinuxPlugin._normalize(LinuxPlugin._tags_stripped("L.A. Rush (USA, Europe)"))).is_equal("la rush")

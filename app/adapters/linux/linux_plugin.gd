@@ -1397,11 +1397,12 @@ static func _alnum(text: String) -> String:
 
 static func _normalize(text: String) -> String:
 	# The subtitle's separators and its punctuation mean one thing in every listing: the
-	# reference lists' ` - `, LaunchBox's `:`, and the bare space they sometimes leave, and
-	# the `!` one listing's `Punch-Out!` is another's `Punch-Out!!`; the keys compare without
-	# them, and the spaces they leave behind are re-joined, so the collapse follows the cut.
+	# reference lists' ` - `, LaunchBox's `:`, the `!` one listing's `Punch-Out!` is another's
+	# `Punch-Out!!`, and the `.` one listing's `L.A. Rush` is another's `LA Rush`; the keys
+	# compare without them, and the spaces they leave behind are re-joined, so the collapse
+	# follows the cut.
 	var sep := RegEx.new()
-	sep.compile("[-:!]")
+	sep.compile("[-:!.]")
 	var t := sep.sub(text.strip_edges(), "", true).to_lower()
 	var re := RegEx.new()
 	re.compile("\\s+")
