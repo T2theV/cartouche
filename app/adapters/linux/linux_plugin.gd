@@ -112,6 +112,7 @@ static var _title_lists: Dictionary = {}
 static var _print_lists: Dictionary = {}
 static var _serial_index: Dictionary = {}
 static var _label_region := ""
+static var _label_source := ""
 static var _crc_table: PackedInt32Array = []
 static var _config_override := ""
 static var _config_path := ""
@@ -1598,6 +1599,17 @@ static func _label_region_strict() -> bool:
 	var v: String = _label_region if _label_region != "" else argument("label-region")
 	return v == "strict" or v == "1"
 
+
+## The test's `--label-source` value (the way `set_label_region` stands for the flag's).
+static func set_label_source(value: String) -> void:
+	_label_source = value
+
+
+## The label's source alone asked for: `--label-source=X` (`screenscraper`, `launchbox`, or
+## `psxdatacenter`); the empty string, the order's all.
+static func _label_source_only() -> String:
+	return _label_source if _label_source != "" else argument("label-source")
+
 ## The art index's region name for a game's region tag: `usa` is the index's `North
 ## America`; a multi-region tag (`usa, asia`) stands for its first; the empty string when
 ## the tag names no indexed region (strict: no label).
@@ -1616,8 +1628,9 @@ static func _label_region_key(region: String) -> String:
 				return "Australia"
 	return ""
 
-## The candidates for [param game]'s label, in priority order, discs' LaunchBox's scan first
-## and, on the serial platforms, the serial source's: each `{"source", "source_name",
+## The candidates for [param game]'s label, in priority order: ScreenScraper's (the key's
+## file the source on), LaunchBox's discs' scan, and, on the serial platforms, the serial
+## source's — `--label-source=X` the one, only its: each `{"source", "source_name",
 ## "region", "url", "file"}`.
 func _art_candidates(game: Dictionary) -> Array:
 	var out: Array = []
@@ -1634,6 +1647,7 @@ func _art_candidates(game: Dictionary) -> Array:
 	var region := ""
 	if not game_regions.is_empty():
 		region = str(game_regions[0])
+	var launchbox: Dictionary = {}
 	if not images.is_empty():
 		var file := ""
 		if _label_region_strict():
@@ -1651,15 +1665,20 @@ func _art_candidates(game: Dictionary) -> Array:
 				file = str(images[r])
 				break
 		if not file.is_empty():
-			out.append({"source": _ART_SOURCE_LAUNCHBOX, "source_name": "LaunchBox",
-				"region": region, "url": _ART_IMAGES + file, "file": file})
-	var ss := _art_ss_candidate(platform_id, game, hit, region)
-	if not ss.is_empty():
-		out.append(ss)
+			launchbox = {"source": _ART_SOURCE_LAUNCHBOX, "source_name": "LaunchBox",
+				"region": region, "url": _ART_IMAGES + file, "file": file}
+	var screenscraper := _art_ss_candidate(platform_id, game, hit, region)
 	var serial_url := _art_serial_url(platform_id, game)
+	var psxdatacenter: Dictionary = {}
 	if not serial_url.is_empty():
-		out.append({"source": _ART_SOURCE_PSDATACENTER, "source_name": "PlayStation DataCenter",
-			"region": "", "url": serial_url, "file": serial_url.get_slice("/", -1)})
+		psxdatacenter = {"source": _ART_SOURCE_PSDATACENTER, "source_name": "PlayStation DataCenter",
+			"region": "", "url": serial_url, "file": serial_url.get_slice("/", -1)}
+	# The order's, or the flag's one alone.
+	var only := _label_source_only()
+	for candidate: Dictionary in [screenscraper, launchbox, psxdatacenter]:
+		if candidate.is_empty() or (only != "" and str(candidate["source"]) != only):
+			continue
+		out.append(candidate)
 	return out
 
 
@@ -1788,7 +1807,8 @@ func _art_game_order(focus: PackedStringArray) -> PackedStringArray:
 
 
 ## The games' art, looked for as the carousel gives the on-screen games: the stored labels are
-## told at once, the rest downloaded one by one, LaunchBox's then the serial source's,
+## told at once, the rest downloaded one by one, ScreenScraper's (the key's file on) then
+## LaunchBox's then the serial source's,
 ## [signal art_changed] the progress, a found, or the absences.
 func artFocus(focus: PackedStringArray) -> void:
 	if DisplayServer.get_name() == "headless" or _art_http != null or _art_pacing:

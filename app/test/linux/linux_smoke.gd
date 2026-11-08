@@ -177,6 +177,27 @@ func _ready() -> void:
 		_check("jeuid=1291" in str(ss_cand["url"]), "screenscraper: the request's game is the table's")
 		_check("systemeid=3" in str(ss_cand["url"]), "screenscraper: the request's system is the profile's")
 		_check("media=support-texture(us)" in str(ss_cand["url"]), "screenscraper: the texture is the region's")
+	# The order: ScreenScraper's first (the key's file on), then LaunchBox's; and the
+	# flag's one, alone.
+	if tetris_cands.size() > 0:
+		_check(str(tetris_cands[0]["source"]) == "screenscraper", "the order: ScreenScraper's is first (the key's file on)")
+	LinuxPlugin.set_label_source("launchbox")
+	var tetris_lb: Array = plugin._art_candidates(tetris)
+	var tetris_lb_only: bool = not tetris_lb.is_empty()
+	for c: Dictionary in tetris_lb:
+		if str(c["source"]) != "launchbox":
+			tetris_lb_only = false
+	_check(tetris_lb_only, "--label-source=launchbox: only LaunchBox's")
+	LinuxPlugin.set_label_source("screenscraper")
+	var tetris_ss: Array = plugin._art_candidates(tetris)
+	var tetris_ss_only: bool = not tetris_ss.is_empty()
+	for c: Dictionary in tetris_ss:
+		if str(c["source"]) != "screenscraper":
+			tetris_ss_only = false
+	_check(tetris_ss_only, "--label-source=screenscraper: only ScreenScraper's")
+	LinuxPlugin.set_label_source("psxdatacenter")
+	_check(plugin._art_candidates(tetris).is_empty(), "--label-source=psxdatacenter: the non-serial game's, none")
+	LinuxPlugin.set_label_source("")
 	var ss_nomedia := ScreenScraper.new()
 	ss_nomedia.set_key_path(ss_key)
 	_check(ss_nomedia.answer(200, "NOMEDIA".to_utf8_buffer()) == "nomedia", "screenscraper: NOMEDIA is the absence")

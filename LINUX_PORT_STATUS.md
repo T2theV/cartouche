@@ -134,9 +134,11 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
   theirs) is kept at a 1.2 of ours: no request goes sooner from the last.
   The key's file: `--ss-key=PATH` → `CARTOUCHE_SS_KEY` → `user://sskey.json`; without it the
   source is off and no request is ever sent (as the Android builds without a key).
-- The candidate sits between LaunchBox's and the serial source's, and only when a key's
-  file is: LaunchBox first (the 98 labels already stored are untouched), ScreenScraper
-  second, psxdatacenter last. The lookups come in two bridges: the game's own title keys,
+- The candidate sits between the sources by the order: ScreenScraper first (its key's file
+  the source on; the labels already stored are untouched by the order), LaunchBox's, and
+  psxdatacenter last; `--label-source=X` (`screenscraper`, `launchbox`, or
+  `psxdatacenter`) asks for the source alone, the rest not tried. The lookups come in two
+  bridges: the game's own title keys,
   and the art index's row and its alternates as the reference names' bridge — a ROM named
   `Barbie Groovy Games (U)` reaches the table's `Barbie Software - Groovy Games (USA)` row
   by the row's name, not its own. The texture's code is the game's region's
@@ -151,7 +153,9 @@ Games dir, in order: `--games-dir=PATH` (after `--`) → `CARTOUCHE_GAMES_DIR` e
 - Verified: 12 GdUnit cases (the tables' lookups — Rush 2049 by its ROM's title keys,
   Barbie by the art row's bridge — the texture's codes, the request's URL, the answers'
   states) and 14 smoke checks on the Tetris fixture (`jeuid=1291`, `systemeid=3`,
-  `media=support-texture(us)`, the NOMEDIA, the refusal, the 429's and the 430's waits).
+  `media=support-texture(us)`, the NOMEDIA, the refusal, the 429's and the 430's waits) —
+  the order's and the flag's among them (ScreenScraper's first, `--label-source=X` the
+  one alone).
   Against the server, with a key's file (a developer key and a member's `ssid`/
   `sspassword`): the unlabeled games the tables list come back as images, one per the pace
   (Rush 2049 and Barbie among them) — the request's path is live end-to-end. The developer
