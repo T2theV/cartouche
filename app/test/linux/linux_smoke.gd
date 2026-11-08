@@ -35,7 +35,7 @@ func _ready() -> void:
 	var library_holds_games: bool = library is Dictionary and not library.is_empty()
 	_check(library_holds_games, "library is JSON")
 	var games: Array = library.get("games", [])
-	_check(games.size() == 11, "11 games found, got %d" % games.size())
+	_check(games.size() == 12, "12 games found, got %d" % games.size())
 	var shelves_found: Dictionary = library.get("shelves", {})
 	var shelves: Array = shelves_found.get("shelves", [])
 	_check(shelves.size() == 9, "9 shelves, got %d" % shelves.size())
@@ -145,6 +145,17 @@ func _ready() -> void:
 	var halo_cands: Array = plugin._art_candidates(halo)
 	var halo_file: String = str(halo_cands[0]["file"]) if halo_cands.size() > 0 else ""
 	_check(halo_file == "r2_733e1933-1b7b-431b-8413-1162d2ef7005.png", "no flag: the scene name finds the plain row's first region (Europe), got %s" % halo_file)
+	# A scene file name whose title the reference lists punctuate differently (`Punch-Out!`
+	# here, `Punch-Out!!` in the art index) matches no reference row, yet its label is found:
+	# the normalizer cuts the exclamation too, so the core title stands for both spellings.
+	var punch: Dictionary = by_title.get("Punch-Out! [R7PE01]", {})
+	var punch_platform: String = str(punch.get("platform_id", ""))
+	_check(punch_platform == "wii", "the folder makes it a wii game, got %s" % punch_platform)
+	var punch_identified: bool = punch.get("identified", false)
+	_check(not punch_identified, "Punch-Out! [R7PE01] stays unidentified (its name matches no reference row)")
+	var punch_cands: Array = plugin._art_candidates(punch)
+	var punch_file: String = str(punch_cands[0]["file"]) if punch_cands.size() > 0 else ""
+	_check(punch_file == "a951c3f7-1261-4059-842e-d379fe042c19.png", "no flag: the exclamation-punctuated scene name finds the plain row's first region (Europe), got %s" % punch_file)
 
 	# -- the rehearsal: nothing starts, the report is printed -------------------
 	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})
