@@ -1704,12 +1704,17 @@ func _art_ss_candidate(platform_id: String, game: Dictionary, hit: String, regio
 	var codes: Array = row["codes"]
 	var game_id: int = str(row["game"]).to_int()
 	var code := ScreenScraper.texture_code(codes, region, _label_region_strict())
+	var key := "%d:%s" % [game_id, code]
+	if _ss.is_no_media(key):
+		# The server's absence the run's knows: the candidate's not, the request's not asked
+		# again.
+		return {}
 	var system_id: int = str(_ss_system.get(platform_id, 0)).to_int()
 	var url := _ss.request_url(system_id, game_id, code)
 	if url.is_empty():
 		return {}
 	return {"source": _ART_SOURCE_SCREENSCRAPER, "source_name": "ScreenScraper",
-		"region": region, "url": url, "file": "label"}
+		"region": region, "url": url, "file": "label", "no_media_key": key}
 
 
 ## The title's keys, the index's way: itself, then with its trailing `(Region)` and `(Disc N)`
@@ -1927,6 +1932,8 @@ func _on_art_request(result: int, response_code: int, _headers: PackedStringArra
 		# go to the art folder, the rest to the next candidate.
 		var kind := _ss.answer(response_code, body)
 		print("Cartouche plugin: screenscraper: %s (http %d)" % [kind, response_code])
+		if kind == "nomedia":
+			_ss.note_no_media(str(candidate.get("no_media_key", "")))
 		if kind != "image":
 			http.queue_free()
 			job["attempt"] = attempt + 1

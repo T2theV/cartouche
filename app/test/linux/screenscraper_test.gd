@@ -128,3 +128,13 @@ func test_the_image_bytes_are_the_image() -> void:
 	assert_that(_ss.answer(200, png)).is_equal("image")
 	assert_bool(_ss.open()).is_true()
 	assert_that(_ss.answer(200, PackedByteArray([0xFF, 0xD8, 0xFF, 0xE0, 0]))).is_equal("image")
+
+
+func test_the_absence_is_kept_per_run() -> void:
+	var ss := ScreenScraper.new()
+	assert_bool(ss.is_no_media("1291:us")).is_false()
+	ss.note_no_media("1291:us")
+	assert_bool(ss.is_no_media("1291:us")).is_true()
+	assert_bool(ss.is_no_media("1291:eu")).is_false()
+	ss.reset()
+	assert_bool(ss.is_no_media("1291:us")).is_false()

@@ -198,6 +198,19 @@ func _ready() -> void:
 	LinuxPlugin.set_label_source("psxdatacenter")
 	_check(plugin._art_candidates(tetris).is_empty(), "--label-source=psxdatacenter: the non-serial game's, none")
 	LinuxPlugin.set_label_source("")
+	# The absence's note: the run's kept, the request's not asked again, the rest's sources
+	# not its.
+	plugin._ss.note_no_media(str(ss_cand.get("no_media_key", "")))
+	var tetris_noted: Array = plugin._art_candidates(tetris)
+	var tetris_noted_ss: bool = false
+	var tetris_noted_lb: bool = false
+	for c: Dictionary in tetris_noted:
+		if str(c["source"]) == "screenscraper":
+			tetris_noted_ss = true
+		if str(c["source"]) == "launchbox":
+			tetris_noted_lb = true
+	_check(not tetris_noted_ss, "screenscraper: the absence's note, the candidate's off for the run")
+	_check(tetris_noted_lb, "screenscraper: the note's its source's only, LaunchBox's the rest")
 	var ss_nomedia := ScreenScraper.new()
 	ss_nomedia.set_key_path(ss_key)
 	_check(ss_nomedia.answer(200, "NOMEDIA".to_utf8_buffer()) == "nomedia", "screenscraper: NOMEDIA is the absence")

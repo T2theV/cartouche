@@ -45,6 +45,7 @@ var _backoff_until := 0
 var _closed_day := ""
 var _refused := false
 var _last_request := 0
+var _no_media: Dictionary = {}
 
 
 ## Where the key is read: `set_key_path`'s, `--ss-key=`'s, the environment's, or the user's
@@ -114,6 +115,15 @@ func pace_wait_ms() -> int:
 ## The request's ask told, the pace's start.
 func note_request() -> void:
 	_last_request = Time.get_ticks_msec()
+
+
+## The absence's note, the run's kept: the request's key the server answered `NOMEDIA`.
+func note_no_media(key: String) -> void:
+	_no_media[key] = true
+
+## The absence's known: the request's not asked again in the run.
+func is_no_media(key: String) -> bool:
+	return _no_media.has(key)
 
 
 ## The texture's code of [param codes] for [param region]: the region's, then, without
@@ -257,6 +267,7 @@ func reset() -> void:
 	_creds = {}
 	_creds_path = "\n"
 	_tables.clear()
+	_no_media.clear()
 	_backoff_until = 0
 	_closed_day = ""
 	_refused = false
