@@ -17,3 +17,6 @@ app/audio/qa/
 __pycache__/
 app/reports/
 app/.test-run/
+
+# Launch fixtures: demo/test ROM images stay out of git
+roms/
