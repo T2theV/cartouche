@@ -39,7 +39,17 @@ func _ready() -> void:
 	_check(not smw.is_empty(), "the fixture has a snes game")
 
 	# -- rehearsal: the conf's player stands, nothing is started ---------------------------
+	#     The Emulator option's installedPlayers and the prelaunch checkLaunch ask before the
+	#     launch: the conf's text must be loaded by then, or their parse locks the empty
+	#     players and the rehearsal answers no player.
 	LinuxPlugin.set_config(WORK + "/conf-rehearsal.conf")
+	var installed: Dictionary = JSON.parse_string(plugin.installedPlayers("ps2"))
+	var installed_players: Array = installed.get("players", [])
+	_check(installed_players.size() == 2,
+		"the Emulator option lists the installed ps2 players, got %d" % installed_players.size())
+	var precheck: Dictionary = JSON.parse_string(plugin.checkLaunch(0, {"game_id": str(ffx.get("id", "")), "disc": 0}))
+	var precheck_ok: bool = precheck.get("ok", false) == true
+	_check(precheck_ok, "the prelaunch check passes after the Emulator option, got %s" % str(precheck.get("code", "")))
 	var rehearsal_result: Dictionary = JSON.parse_string(plugin.launchGame(1, {"game_id": str(ffx.get("id", "")), "disc": 0}))
 	_check(str(rehearsal_result.get("code", "")) == "linux_printed",
 		"the conf rehearsal answers linux_printed, got %s" % str(rehearsal_result.get("code", "")))

@@ -219,6 +219,9 @@ static func _reset_config() -> void:
 static func _parse_config() -> void:
 	if _config_parsed:
 		return
+	# The text is loaded by [method config_path]: resolve it here, or the parse would run on
+	# the empty text and lock the empty players when the Emulator option asks before any launch.
+	config_path()
 	_config_parsed = true
 	var section := ""
 	for raw_line: String in _config_text.split("\n"):
@@ -724,6 +727,7 @@ func checkLaunch(_id: int, launch: Dictionary) -> String:
 		return JSON.stringify({"ok": false, "code": &"file_missing",
 			"detail": "the game file %s is missing or cannot be read" % file})
 	var platform_id: String = str(game["platform_id"])
+	_parse_config()
 	if select_player(platform_id, file.get_file()).is_empty():
 		return JSON.stringify({"ok": false, "code": &"linux_no_player",
 			"detail": "no installed emulator for %s opens this game" % str(_platform_names.get(platform_id, platform_id))})

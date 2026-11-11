@@ -893,7 +893,7 @@ func _on_game_launch_failed(code: StringName) -> void:
 	Diagnostics.trace("carousel", "launch failed: %s" % code)
 	var platform := _platforms[_shelves[_shelf].platform_id].name
 	match code:
-		&"not_installed", &"no_player":
+		&"not_installed", &"no_player", &"linux_no_player":
 			_show_message(tr("No {platform} emulator is installed.").format({"platform": platform}))
 		&"game_missing":
 			_show_message(tr("This game's file cannot be found: is its SD card or folder still there?"))
