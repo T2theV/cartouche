@@ -3,11 +3,8 @@ extends Node
 ## One-off: the scanned games' ids and titles, in order (the art cache is keyed by id).
 func _ready() -> void:
 	var plugin := LinuxPlugin.new()
-	var lib: Dictionary = plugin.library(0)
-	var parsed: Variant = JSON.parse_string(str(lib["library"]))
-	var current: Dictionary = {}
-	if parsed is Dictionary:
-		current = parsed
+	var lib: Dictionary = JSON.parse_string(plugin.library(0))
+	var current: Dictionary = lib.get("library", {})
 	var games: Array = current.get("games", [])
 	var i := 0
 	for game_raw: Variant in games:

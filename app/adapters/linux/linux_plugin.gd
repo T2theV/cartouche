@@ -404,17 +404,21 @@ static func platform_of(ext: String, size: int, min_bytes: Dictionary) -> String
 
 ## The library, scanned from disk on first use; the same answer until [method rescrape]; the
 ## demo's when the folder holds no games at all.
-func library(_id: int) -> Dictionary:
+func _library_answer() -> Dictionary:
 	_ensure_scanned()
 	var games: Array = _current.get("games", [])
 	if games.is_empty():
 		return _demo_library()
-	return {"ok": true, "library": JSON.stringify(_current)}
+	return {"ok": true, "library": _current}
+
+
+func library(_id: int) -> String:
+	return JSON.stringify(_library_answer())
 
 
 ## The carousel asks here on a desktop, and the desktop demo would answer made-up: the scanned
 ## library instead, or the demo's when the folder holds no games at all.
-func useDemoLibrary(id: int, _games: int, _platform_id: String) -> Dictionary:
+func useDemoLibrary(id: int, _games: int, _platform_id: String) -> String:
 	return library(id)
 
 
@@ -445,7 +449,7 @@ func titleMarks(platform_id: String, position: int, typed: String) -> String:
 	_ensure_scanned()
 	var shelf := _shelf_games(platform_id)
 	if position < 0 or position >= shelf.size():
-		return "[]"
+		return JSON.stringify({"marks": []})
 	var marks: Array = []
 	var needle := typed.strip_edges()
 	if not needle.is_empty():
@@ -457,9 +461,9 @@ func titleMarks(platform_id: String, position: int, typed: String) -> String:
 			var at := hay.find(needle_l, from)
 			if at < 0:
 				break
-			marks.append([at, needle.length()])
+			marks.append({"start": at, "length": needle.length()})
 			from += needle_l.length()
-	return JSON.stringify(marks)
+	return JSON.stringify({"marks": marks})
 
 
 ## The launch: rehearsed when there is no conf, or the conf rehearses, run for real otherwise.
@@ -469,11 +473,11 @@ func titleMarks(platform_id: String, position: int, typed: String) -> String:
 ## is started; for real, a player with `stop_first` first stops its lingering instances (the
 ## emulator would resume the previous game), and its command, the conf's line with
 ## `{file.path}` filled, runs, the emulator left to the display server of the container.
-func launchGame(_id: int, launch: Dictionary) -> Dictionary:
+func launchGame(_id: int, launch: Dictionary) -> String:
 	var game_id: String = str(launch.get("game_id", ""))
 	var game: Dictionary = _game_by_id(game_id)
 	if game.is_empty():
-		return {"ok": false, "code": &"game_missing", "detail": "the library has no such game"}
+		return JSON.stringify({"ok": false, "code": &"game_missing", "detail": "the library has no such game"})
 	var files: PackedStringArray = _file_by_game.get(game_id, PackedStringArray())
 	var disc: int = launch.get("disc", 0)
 	var file: String = ""
@@ -509,8 +513,8 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 		print(missing_text)
 		print("  the game file is missing or cannot be read")
 		launch_reported.emit(report)
-		return {"ok": false, "code": &"file_missing",
-			"detail": "the game file %s is missing or cannot be read" % file}
+		return JSON.stringify({"ok": false, "code": &"file_missing",
+			"detail": "the game file %s is missing or cannot be read" % file})
 	var conf_path: String = config_path()
 	if conf_path.is_empty():
 		report["command"] = command_for(platform_id, file)
@@ -518,8 +522,8 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 		report["text"] = rehearsal_text
 		print(rehearsal_text)
 		launch_reported.emit(report)
-		return {"ok": false, "code": &"linux_printed",
-			"detail": "launch rehearsed and printed: no emulator is started on Linux"}
+		return JSON.stringify({"ok": false, "code": &"linux_printed",
+			"detail": "launch rehearsed and printed: no emulator is started on Linux"})
 	_parse_config()
 	var selected: Dictionary = select_player(platform_id, file.get_file())
 	if selected.is_empty():
@@ -533,8 +537,8 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 		report["text"] = no_player_text
 		print(no_player_text)
 		launch_reported.emit(report)
-		return {"ok": false, "code": &"linux_no_player",
-			"detail": "no installed emulator for %s opens this game" % str(_platform_names.get(platform_id, platform_id))}
+		return JSON.stringify({"ok": false, "code": &"linux_no_player",
+			"detail": "no installed emulator for %s opens this game" % str(_platform_names.get(platform_id, platform_id))})
 	var player_name: String = str(selected["name"])
 	var binary := binary_at(str(selected.get("binary_token", "")))
 	var command := _fill(str(selected["command"]), file)
@@ -551,8 +555,8 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 	print(text)
 	launch_reported.emit(report)
 	if rehearsal:
-		return {"ok": false, "code": &"linux_printed",
-			"detail": "launch rehearsed and printed: no emulator is started on Linux"}
+		return JSON.stringify({"ok": false, "code": &"linux_printed",
+			"detail": "launch rehearsed and printed: no emulator is started on Linux"})
 	if stop_first:
 		var kill_rc: int = OS.execute("pkill", ["-f", binary])
 		if kill_rc < 0:
@@ -575,46 +579,186 @@ func launchGame(_id: int, launch: Dictionary) -> Dictionary:
 	var script_path: String = "/tmp/cartouche-%s-%d.sh" % [str(selected["name"]), Time.get_ticks_msec()]
 	var sfile := FileAccess.open(script_path, FileAccess.WRITE)
 	if sfile == null:
-		return {"ok": false, "code": &"launch_failed",
-			"detail": "the launch script %s cannot be written" % script_path}
+		return JSON.stringify({"ok": false, "code": &"launch_failed",
+			"detail": "the launch script %s cannot be written" % script_path})
 	sfile.store_string(line + "\n")
 	sfile.close()
 	var start_rc: int = OS.execute("/bin/sh", [script_path])
 	if start_rc != 0:
-		return {"ok": false, "code": &"launch_failed",
-			"detail": "the launch failed (exit %d): %s" % [start_rc, command]}
-	return {"ok": true, "code": &"linux_launched", "detail": "launched: %s" % command}
+		return JSON.stringify({"ok": false, "code": &"launch_failed",
+			"detail": "the launch failed (exit %d): %s" % [start_rc, command]})
+	return JSON.stringify({"ok": true, "code": &"linux_launched", "detail": "launched: %s" % command})
 
 
 ## Scans the folder again, reading every game file anew; no label is looked for (there is no
 ## ScreenScraper here, by design).
-func rescrape(id: int) -> Dictionary:
+func _rescan() -> Dictionary:
 	_scanned = false
 	_current = {}
-	var answer: Dictionary = library(id)
+	var answer: Dictionary = _library_answer()
 	var games: Array = _current.get("games", [])
 	answer["games"] = games.size()
 	answer["labels"] = 0
 	return answer
 
 
+func rescrape(_id: int) -> String:
+	return JSON.stringify(_rescan())
+
+
 ## The scan of [param platform_id]'s folder: the folder is one for every platform here, so the
 ## scan is the whole scan, and the report its own.
-func scanPlatform(id: int, platform_id: String) -> Dictionary:
-	var answer: Dictionary = rescrape(id)
+func scanPlatform(_id: int, platform_id: String) -> String:
+	var answer: Dictionary = _rescan()
 	answer["report"] = _scan_report(platform_id)
-	return answer
+	return JSON.stringify(answer)
 
 
 ## How many games a scan of [param platform_id]'s folder would find, without saving anything.
-func previewPlatform(_id: int, platform_id: String, _setup: Dictionary) -> Dictionary:
+func previewPlatform(_id: int, platform_id: String, _setup: Dictionary) -> String:
 	_ensure_scanned()
-	return {"ok": true, "report": _scan_report(platform_id)}
+	return JSON.stringify({"ok": true, "report": _scan_report(platform_id)})
 
 
 ## The desktop stand-in's name is the system's; the Linux one says it is Linux.
 func deviceName() -> String:
 	return "%s %s" % [OS.get_name(), OS.get_version()]
+
+
+## The catalog as the stand-in sends it: the demo's, one source of the consoles' ring.
+func loadCatalog(..._data: Array) -> String:
+	return JSON.stringify(demo("catalog"))
+
+
+## The installed players of [param platform_id], in the conf's order, for the form's list:
+## the broken one (its binary does not stand) is not in it.
+func installedPlayers(platform_id: String) -> String:
+	_parse_config()
+	var players: Array = []
+	var conf_players: Array = _players.get(platform_id, [])
+	for player: Dictionary in conf_players:
+		if player.get("broken", false):
+			continue
+		if binary_at(str(player.get("binary_token", ""))).is_empty():
+			continue
+		players.append({"id": str(player["name"]), "name": str(player["name"]),
+			"emulator_name": str(player.get("binary_token", ""))})
+	return JSON.stringify({"players": players})
+
+
+func battery() -> String:
+	return JSON.stringify(demo("battery"))
+
+
+## No curtain on a Linux desktop: the emulator shows in its own window.
+func curtainAllowed() -> String:
+	return "false"
+
+
+func launchArguments() -> String:
+	return JSON.stringify(OS.get_cmdline_user_args())
+
+
+func releaseMemory() -> void:
+	pass
+
+
+func prepareTables(_platform_id: String) -> void:
+	pass
+
+
+func currentLibrary(_id: int) -> String:
+	return JSON.stringify(_library_answer())
+
+
+func selectGame(_id: int, _game_id: String) -> String:
+	return JSON.stringify({"ok": true})
+
+
+func enterConsole(_id: int, _platform_id: String) -> String:
+	return JSON.stringify({"ok": true, "arrivals": {"unseen": [], "announced": {}}})
+
+
+func leaveGame(_id: int, _game_id: String) -> String:
+	return JSON.stringify({"ok": true, "arrivals": {"unseen": [], "announced": {}}})
+
+
+## The refresh's answer: a rescan, and no arrivals on a Linux scan (the demo's).
+func refreshPlatform(_id: int, _platform_id: String) -> String:
+	var answer: Dictionary = _rescan()
+	answer["arrivals"] = {"unseen": [], "announced": {}}
+	return JSON.stringify(answer)
+
+
+func removePlatform(_id: int, _platform_id: String) -> String:
+	return JSON.stringify({"ok": false, "code": &"unexpected",
+		"detail": "the Linux scan reads a folder and keeps no per-platform setup to remove"})
+
+
+func orderConsoles(_id: int, _platform_ids: PackedStringArray) -> String:
+	return JSON.stringify({"ok": false, "code": &"unexpected",
+		"detail": "the Linux scan shows its consoles in the catalog's order"})
+
+
+func placeConsole(_id: int, _platform_id: String, _gap: int) -> String:
+	# The stand-in's no-story code: without a picked folder the scan keeps its own order.
+	return JSON.stringify({"ok": false, "code": &"unavailable",
+		"detail": "the Linux scan shows its consoles in the catalog's order"})
+
+
+## The rehearsal's answer without running: the game, its disc's file, and the platform's
+## player all stand, or the same refusal [method launchGame] would give.
+func checkLaunch(_id: int, launch: Dictionary) -> String:
+	var game_id: String = str(launch.get("game_id", ""))
+	var game: Dictionary = _game_by_id(game_id)
+	if game.is_empty():
+		return JSON.stringify({"ok": false, "code": &"game_missing",
+			"detail": "the library has no such game"})
+	var files: PackedStringArray = _file_by_game.get(game_id, PackedStringArray())
+	var disc: int = launch.get("disc", 0)
+	if disc >= files.size():
+		return JSON.stringify({"ok": false, "code": &"game_missing",
+			"detail": "the game has no such disc"})
+	var file: String = files[disc]
+	if not FileAccess.file_exists(file):
+		return JSON.stringify({"ok": false, "code": &"file_missing",
+			"detail": "the game file %s is missing or cannot be read" % file})
+	var platform_id: String = str(game["platform_id"])
+	if select_player(platform_id, file.get_file()).is_empty():
+		return JSON.stringify({"ok": false, "code": &"linux_no_player",
+			"detail": "no installed emulator for %s opens this game" % str(_platform_names.get(platform_id, platform_id))})
+	return JSON.stringify({"ok": true})
+
+
+func persistedFolders(_id: int) -> String:
+	return JSON.stringify({"ok": true, "folders": []})
+
+
+func requestCurtainPermission(_id: int) -> String:
+	return JSON.stringify({"ok": false, "code": &"activity_not_found",
+		"detail": "Linux has no curtain permission to ask for"})
+
+
+## The one-shot answers: the scan's pipeline does its own, and the stand-in's one-shot
+## variants have no stand for them here.
+func chooseLabel(_id: int, _game_id: String, _region: String, _source: String) -> String:
+	return JSON.stringify({"ok": false, "code": &"unexpected",
+		"detail": "the scan's art pipeline chooses the label on its own"})
+
+
+func renameGame(_id: int, _game_id: String, _shown: String) -> String:
+	return JSON.stringify({"ok": false, "code": &"unexpected",
+		"detail": "the scan reads the title from the file and keeps no rename"})
+
+
+func pickLabelPicture(_id: int) -> String:
+	return JSON.stringify({"ok": false, "code": &"activity_not_found",
+		"detail": "Linux has no system picture picker"})
+
+
+func keepOwnLabel(_id: int, _game_id: String, _zoom: float, _centre_x: float, _centre_y: float, _proportion: float) -> String:
+	return JSON.stringify({"ok": false, "code": &"unexpected",
+		"detail": "the scan's art pipeline stores the label it finds"})
 
 
 # ---------------------------------------------------------------- the scan
@@ -782,16 +926,19 @@ func _build_library() -> Dictionary:
 			platform_games.append(games.size() - 1)
 		if not platform_games.is_empty():
 			by_platform[platform_id] = platform_games
-			shelves.append({"platform": platform_id, "games": platform_games, "selected": 0})
+			shelves.append({"platform_id": platform_id, "game_indexes": platform_games, "selected": 0})
 	var library_data: Dictionary = {
+		"revision": 0,
 		"setups": {},
 		"games": games,
 		"not_games": not_games,
-		"ignored_counts": {"*": {"unsupported": {"count": unsupported.size(),
-			"examples": unsupported.slice(0, 3)}}},
+		"ignored_counts": {"*": [{"reason": "unsupported",
+			"count": unsupported.size(),
+			"examples": unsupported.slice(0, 3)}]},
 		"skipped_folders": {},
 		"console_variants": {},
-		"shelves": {"shelves": shelves, "selected": 0},
+		"shelves": shelves,
+		"selected_shelf": 0,
 	}
 	for platform_id: String in by_platform:
 		library_data["setups"][platform_id] = {"folder_uri": dir, "folder_depth": "top_level",
@@ -1490,13 +1637,13 @@ static func _to_hex(value: int) -> String:
 
 # ------------------------------------------------------------- the art
 
-## The plugin's answers, as the services' signals carry them; the desktop stand-in's are the
-## demo's, the Android bridge's the device's.
-signal answered(payload: Dictionary)
-signal art_changed(payload: Dictionary)
-signal art_progress(payload: Dictionary)
-signal label_variant_downloaded(payload: Dictionary)
-signal battery_changed(payload: Dictionary)
+## The plugin's answers, as the services' signals carry them: the JSON text the app's bridge
+## speaks, each the wire's own shape.
+signal answered(text: String)
+signal art_changed(text: String)
+signal art_progress(text: String)
+signal label_variant_downloaded(text: String)
+signal battery_changed(text: String)
 
 const _ART_INDEX_DIR := "res://data/art"
 const _ART_IMAGES := "https://images.launchbox-app.com/"
@@ -1779,10 +1926,11 @@ func _art_serial_url(platform_id: String, game: Dictionary) -> String:
 
 
 ## The label variants of [param game_id], as `labelVariants` answers.
-func labelVariants(_id: int, game_id: String) -> Dictionary:
+func labelVariants(_id: int, game_id: String) -> String:
 	var game := _game_by_id(game_id)
 	if game.is_empty():
-		return {"ok": false}
+		return JSON.stringify({"ok": false, "code": &"game_missing",
+			"detail": "the library has no such game"})
 	var variants: Array = []
 	var stored := _art_stored(game)
 	var stored_source := str(_art_source_by_game.get(game_id, ""))
@@ -1795,7 +1943,7 @@ func labelVariants(_id: int, game_id: String) -> Dictionary:
 		if not stored.is_empty() and candidate["source"] == stored_source:
 			variant["path"] = stored
 		variants.append(variant)
-	return {"ok": true, "variants": variants}
+	return JSON.stringify({"ok": true, "variants": variants})
 
 
 ## The games' order for the art: [param focus] first, in order, the library's after.
@@ -1979,11 +2127,11 @@ func _label_variant_downloaded(game_id: String, candidate: Dictionary, path: Str
 		"source": candidate["source"],
 		"source_name": candidate["source_name"],
 		"path": path}
-	label_variant_downloaded.emit(payload)
+	label_variant_downloaded.emit(JSON.stringify(payload))
 
 
 func _art_changed(payload: Dictionary) -> void:
-	art_changed.emit(payload)
+	art_changed.emit(JSON.stringify(payload))
 
 
 # ------------------------------------------------------------- the reporting
@@ -2003,12 +2151,11 @@ func _shelf_games(platform_id: String) -> Array:
 		return []
 	var out: Array = []
 	var games: Array = _current.get("games", [])
-	var shelves_root: Dictionary = _current.get("shelves", {})
-	var shelves: Array = shelves_root.get("shelves", [])
+	var shelves: Array = _current.get("shelves", [])
 	for shelf: Dictionary in shelves:
-		if str(shelf["platform"]) != platform_id:
+		if str(shelf["platform_id"]) != platform_id:
 			continue
-		var game_indexes: Array = shelf["games"]
+		var game_indexes: Array = shelf["game_indexes"]
 		for index: int in game_indexes:
 			var game: Dictionary = games[index]
 			var regions: Array = game.get("regions", [])
@@ -2108,7 +2255,7 @@ func _demo_library() -> Dictionary:
 	var made := demo("library")
 	made["console_variants"] = _variants()
 	_current = made
-	return {"ok": true, "library": JSON.stringify(made)}
+	return {"ok": true, "library": made}
 
 
 ## The scan's report, as the terminal reads it.
@@ -2120,8 +2267,7 @@ func _scan_summary() -> String:
 	if games.is_empty():
 		lines.append("  no games found: put game files in %s (or --games-dir=PATH)" % dir)
 		return "\n".join(lines)
-	var shelves_root: Dictionary = _current.get("shelves", {})
-	var shelves: Array = shelves_root.get("shelves", [])
+	var shelves: Array = _current.get("shelves", [])
 	var identified := 0
 	for game: Dictionary in games:
 		if game["identified"]:
@@ -2131,16 +2277,16 @@ func _scan_summary() -> String:
 	var ignored_count := _not_games_count(not_games)
 	var ignored: Dictionary = _current.get("ignored_counts", {})
 	if not ignored.is_empty():
-		var star: Dictionary = ignored.get("*", {})
-		var unsupported: Dictionary = star.get("unsupported", {})
-		ignored_count += unsupported.get("count", 0)
+		for entry: Dictionary in ignored.get("*", []):
+			if str(entry.get("reason", "")) == "unsupported":
+				ignored_count += entry.get("count", 0)
 	if ignored_count > 0:
 		lines.append("  %d file(s) set aside (too small or unsupported)" % ignored_count)
 	for shelf: Dictionary in shelves:
-		var platform_id: String = str(shelf["platform"])
+		var platform_id: String = str(shelf["platform_id"])
 		lines.append("  %s (%s):" % [_platform_names.get(platform_id, platform_id), platform_id])
 		var shown := 0
-		var game_indexes: Array = shelf["games"]
+		var game_indexes: Array = shelf["game_indexes"]
 		for index: int in game_indexes:
 			if shown >= 8:
 				lines.append("    …")

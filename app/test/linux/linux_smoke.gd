@@ -28,16 +28,15 @@ func _ready() -> void:
 	plugin.launch_reported.connect(func(r: Dictionary) -> void: reports.append(r))
 
 	# -- the library -----------------------------------------------------------
-	var answer: Dictionary = plugin.library(1)
+	var answer: Dictionary = JSON.parse_string(plugin.library(1))
 	var ok: bool = answer.get("ok", false)
 	_check(ok, "library answers ok")
-	var library: Dictionary = JSON.parse_string(str(answer.get("library", "{}")))
+	var library: Dictionary = answer.get("library", {})
 	var library_holds_games: bool = library is Dictionary and not library.is_empty()
 	_check(library_holds_games, "library is JSON")
 	var games: Array = library.get("games", [])
 	_check(games.size() == 12, "12 games found, got %d" % games.size())
-	var shelves_found: Dictionary = library.get("shelves", {})
-	var shelves: Array = shelves_found.get("shelves", [])
+	var shelves: Array = library.get("shelves", [])
 	_check(shelves.size() == 9, "9 shelves, got %d" % shelves.size())
 	var by_title := {}
 	for game: Dictionary in games:
@@ -85,9 +84,10 @@ func _ready() -> void:
 	var nes_not_games: Array = not_games.get("nes", [])
 	_check("too_small.nes" in nes_not_games, "too_small.nes is a not_game of nes")
 	var ignored: Dictionary = library.get("ignored_counts", {})
-	var counts: Dictionary = ignored.get("*", {})
-	var unsupported: Dictionary = counts.get("unsupported", {})
-	var unsupported_count: int = unsupported.get("count", 0)
+	var unsupported_count := 0
+	for entry: Dictionary in ignored.get("*", []):
+		if str(entry.get("reason", "")) == "unsupported":
+			unsupported_count = entry.get("count", 0)
 	_check(unsupported_count == 2, "readme.txt and the bios are the unsupported files, got %d" % unsupported_count)
 
 	# -- the label's region ----------------------------------------------------------
@@ -234,7 +234,7 @@ func _ready() -> void:
 	DirAccess.remove_absolute(ss_key)
 
 	# -- the rehearsal: nothing starts, the report is printed -------------------
-	var result: Dictionary = plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0})
+	var result: Dictionary = JSON.parse_string(plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0}))
 	var result_code: String = str(result.get("code", ""))
 	_check(result_code == "linux_printed", "launch rehearsed (linux_printed), got %s" % result_code)
 	plugin.launchGame(3, {"game_id": str(smw.get("id", "")), "disc": 0})

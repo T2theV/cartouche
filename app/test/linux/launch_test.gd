@@ -25,10 +25,10 @@ func _ready() -> void:
 	plugin.launch_reported.connect(func(r: Dictionary) -> void: reports.append(r))
 
 	# -- the library: the fixture ps2 game (a CHD) and a snes game (no conf for snes) ----
-	var answer: Dictionary = plugin.library(1)
+	var answer: Dictionary = JSON.parse_string(plugin.library(1))
 	var library_ok: bool = answer.get("ok", false)
 	_check(library_ok, "library answers ok")
-	var library: Dictionary = JSON.parse_string(str(answer.get("library", "{}")))
+	var library: Dictionary = answer.get("library", {})
 	var games: Array = library.get("games", [])
 	var by_title := {}
 	for game: Dictionary in games:
@@ -40,7 +40,7 @@ func _ready() -> void:
 
 	# -- rehearsal: the conf's player stands, nothing is started ---------------------------
 	LinuxPlugin.set_config(WORK + "/conf-rehearsal.conf")
-	var rehearsal_result: Dictionary = plugin.launchGame(1, {"game_id": str(ffx.get("id", "")), "disc": 0})
+	var rehearsal_result: Dictionary = JSON.parse_string(plugin.launchGame(1, {"game_id": str(ffx.get("id", "")), "disc": 0}))
 	_check(str(rehearsal_result.get("code", "")) == "linux_printed",
 		"the conf rehearsal answers linux_printed, got %s" % str(rehearsal_result.get("code", "")))
 	_check(reports.size() == 1, "the rehearsal emitted a report, got %d" % reports.size())
@@ -55,7 +55,7 @@ func _ready() -> void:
 
 	# -- for real: the stub runs with the file ---------------------------------------------
 	LinuxPlugin.set_config(WORK + "/conf-real.conf")
-	var real_result: Dictionary = plugin.launchGame(2, {"game_id": str(ffx.get("id", "")), "disc": 0})
+	var real_result: Dictionary = JSON.parse_string(plugin.launchGame(2, {"game_id": str(ffx.get("id", "")), "disc": 0}))
 	_check(str(real_result.get("code", "")) == "linux_launched",
 		"the launch answers linux_launched, got %s" % str(real_result.get("code", "")))
 	var real_ok: bool = real_result.get("ok", false)
@@ -85,7 +85,7 @@ func _ready() -> void:
 
 	# -- no player: the conf lists no snes --------------------------------------------------
 	LinuxPlugin.set_config(WORK + "/conf-real.conf")
-	var no_player: Dictionary = plugin.launchGame(5, {"game_id": str(smw.get("id", "")), "disc": 0})
+	var no_player: Dictionary = JSON.parse_string(plugin.launchGame(5, {"game_id": str(smw.get("id", "")), "disc": 0}))
 	_check(str(no_player.get("code", "")) == "linux_no_player",
 		"no snes player: linux_no_player, got %s" % str(no_player.get("code", "")))
 

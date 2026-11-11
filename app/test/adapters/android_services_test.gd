@@ -29,11 +29,13 @@ func test_what_the_carousel_shows_of_a_shelf_is_read_as_the_plugin_sends_it() ->
 	services._plugin = auto_free(FakePlugin.new())
 	assert_array(Array(services.browse("ps2", &"title", "ace").games)).is_equal([2, 0])
 	assert_array(services.title_marks("ps2", 0, "dist ace")).is_equal([Vector2i(0, 3), Vector2i(13, 4)])
-	# Without the plugin, nothing: no game, no key.
-	var none := Android.browse("ps2", &"title", "ace")
-	assert_int(none.count).is_equal(0)
-	assert_array(Array(none.games)).is_empty()
-	assert_array(Android.title_marks("ps2", 0, "ace")).is_empty()
+	# Without the plugin, nothing: no game, no key; the Linux port wires its real plugin into
+	# the autoload, and its browse answers from the scan.
+	if OS.get_name() != "Linux":
+		var none := Android.browse("ps2", &"title", "ace")
+		assert_int(none.count).is_equal(0)
+		assert_array(Array(none.games)).is_empty()
+		assert_array(Android.title_marks("ps2", 0, "ace")).is_empty()
 
 
 func test_a_library_without_shelves_has_none() -> void:
@@ -165,6 +167,10 @@ func test_without_the_plugin_and_without_a_form_story_a_model_chosen_in_edit_is_
 
 
 func test_without_the_plugin_the_demo_on_one_shelf_has_every_game_on_that_console_alone() -> void:
+	# The stand-in deals its demo onto one shelf; the Linux port answers the scanned library
+	# instead, so the stand-in's deal is not asserted there.
+	if OS.get_name() == "Linux":
+		return
 	var services: AndroidServices = auto_free(AndroidServices.new())
 	var answer := await services.use_demo_library(0, "ps2")
 	var games: Array = DesktopPlugin.demo("library")["games"]
@@ -226,7 +232,10 @@ func test_the_catalog_is_loaded_with_the_platforms_of_the_console_manifests() ->
 
 func test_desktop_settings_save_every_choice_with_the_same_success_and_read_them_back() -> void:
 	var services: AndroidServices = auto_free(AndroidServices.new())
-	assert_bool(services.is_available()).is_false()
+	# A fresh service without the plugin is unavailable; the Linux port's is the real plugin,
+	# available, and the choices it saves it reads back.
+	if OS.get_name() != "Linux":
+		assert_bool(services.is_available()).is_false()
 	assert_bool(FileAccess.file_exists(DesktopPlugin.DEMO)).is_true()
 	assert_bool((await services.settings()).games_float).is_false()
 	assert_bool((await services.settings()).has_button_style).is_false()
