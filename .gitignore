@@ -15,3 +15,5 @@ app/override.cfg
 # Sound QA pictures and report, made by dev/audio/sfx.py qa
 app/audio/qa/
 __pycache__/
+app/reports/
+app/.test-run/
