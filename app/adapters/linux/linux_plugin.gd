@@ -84,6 +84,12 @@ const _MAX_DEPTH := 12
 const _MAX_FILES := 20000
 ## The largest file the parsers take in whole.
 const _MAX_PARSE_BYTES := 64 * 1024 * 1024
+## The parse cache's version: a change in the parse or the cache's shape is a bump, the old
+## file's refused, the whole scan's the cache's off.
+const _PARSE_CACHE_VERSION := 1
+## The reference DB's cache's version: a change in the reference lists' data or the cache's
+## shape is a bump, the old file's refused, the lists' parsed again.
+const _REF_CACHE_VERSION := 1
 ## The `(Disc N)` and the trailing `Disc N` of a file name, numbered for [method _disc_number].
 const _DISC_NUMBER_RE := "\\((?:disc|disk)\\s*(\\d+)\\)|(?:^|\\s)(?:disc|disk)\\s*[-:]?\\s*(\\d+)$"
 ## The `(disc N)` and the trailing `disc N` of a file name, for [method _group_key].
@@ -107,10 +113,16 @@ var _reports := {}
 var _skipped_dirs: Array = []
 var _scan_ms := 0
 var _scanned := false
+var _parse_cache: Dictionary = {}
+var _parse_cache_loaded := false
+var _cache_bypass := false
 static var _dir_override := ""
 static var _title_lists: Dictionary = {}
 static var _print_lists: Dictionary = {}
 static var _serial_index: Dictionary = {}
+static var _ref_cache_path := ""
+static var _ref_loaded := false
+static var _ref_parse_io := 0
 static var _label_region := ""
 static var _label_source := ""
 static var _crc_table: PackedInt32Array = []
@@ -155,6 +167,23 @@ static func games_dir() -> String:
 ## Tests: scan [param dir] instead of the usual place.
 static func set_games_dir(dir: String) -> void:
 	_dir_override = dir
+
+
+## The parse cache's file, for tests (`user://scan-cache.json` the default): the scan's
+## per-file parse keyed on the file's path, size, and mtime; the second scan of an
+## unchanged folder reads the parse, not the file.
+static var _scan_cache_path := ""
+## The parses this run did for real, a test's measure of the parse cache's work.
+static var _parse_io := 0
+
+
+static func set_scan_cache_path(path: String) -> void:
+	_scan_cache_path = path
+
+
+## The reference cache's file, for tests (`user://ref-cache.json` the default).
+static func set_ref_cache_path(path: String) -> void:
+	_ref_cache_path = path
 
 
 ## Where the launch config stands: `--config=PATH` among the arguments, the `CARTOUCHE_CONFIG`
@@ -596,6 +625,7 @@ func launchGame(_id: int, launch: Dictionary) -> String:
 ## Scans the folder again, reading every game file anew; no label is looked for (there is no
 ## ScreenScraper here, by design).
 func _rescan() -> Dictionary:
+	_cache_bypass = true
 	_scanned = false
 	_current = {}
 	var answer: Dictionary = _library_answer()
@@ -773,6 +803,7 @@ func _ensure_scanned() -> void:
 		return
 	_scanned = true
 	_read_data()
+	_load_parse_cache()
 	var started := Time.get_ticks_msec()
 	_current = _build_library()
 	_scan_ms = Time.get_ticks_msec() - started
@@ -800,9 +831,12 @@ func _read_data() -> void:
 		if scans_raw is Dictionary:
 			scans = scans_raw
 		_art_scans_url[platform_id] = str(scans.get("url", ""))
-	_title_lists = _list(_TITLES, true)
-	_print_lists = _list(_PRINTS, false)
-	_serial_index = _serial_lists()
+	if not _load_ref_cache():
+		_ref_parse_io += 1
+		_title_lists = _list(_TITLES, true)
+		_print_lists = _list(_PRINTS, false)
+		_serial_index = _serial_lists()
+		_store_ref_cache()
 
 
 ## `{platform: {…}}` for a reference list of `name<TAB>code` lines: the titles' [param by_name]
@@ -961,6 +995,8 @@ func _build_library() -> Dictionary:
 		"identified": _identified_count("", games),
 		"ignored": _not_games_count(not_games) + unsupported.size(),
 		"skipped_folders": _skipped_dirs.size()}
+	_store_parse_cache(files)
+	_cache_bypass = false
 	return library_data
 
 
@@ -994,7 +1030,175 @@ func _walk(dir: String, rel: String, depth: int, files: Array) -> void:
 		var path := dir.path_join(name)
 		files.append({"path": path, "name": name,
 			"rel": name if rel.is_empty() else rel.path_join(name),
-			"size": _size_of(path)})
+			"size": _size_of(path), "mtime": _mtime_of(path)})
+
+
+## The file's mtime, unix seconds: the parse cache's key beside its size.
+static func _mtime_of(path: String) -> int:
+	return FileAccess.get_modified_time(path)
+
+
+## The parse of [param entry] — its print, its serials, its CHD header — the cache's when
+## the file stands as the cache says (its size, its mtime, its platform), the file's reads
+## otherwise, the cache's new line either way.
+func _parse_entry(platform_id: String, entry: Dictionary) -> Dictionary:
+	var path := str(entry["path"])
+	var size: int = entry["size"]
+	var mtime: int = _mtime_of(path)
+	var cached: Dictionary = _parse_cache.get(path, {})
+	if not _cache_bypass and cached.has("crc") and cached.has("serials") and cached.has("chd") \
+		and cached.get("size") == size and cached.get("mtime") == mtime \
+		and str(cached.get("platform", "")) == platform_id:
+		var cached_serials: Array = cached["serials"]
+		return {"crc": str(cached["crc"]), "serials": cached_serials.duplicate(),
+			"chd": _dup_chd(cached["chd"])}
+	_parse_io += 1
+	var crc := _print_of(platform_id, entry)
+	var serials := _serials_of(entry)
+	var chd: Variant = _chd_header(platform_id, entry)
+	_parse_cache[path] = {"platform": platform_id, "size": size, "mtime": mtime,
+		"crc": crc, "serials": serials, "chd": chd}
+	return {"crc": crc, "serials": serials.duplicate(), "chd": _dup_chd(chd)}
+
+
+static func _dup_chd(chd: Variant) -> Variant:
+	if chd is Dictionary:
+		var stored: Dictionary = chd
+		return stored.duplicate(true)
+	return null
+
+
+## The parse cache's file: the tests' [method set_scan_cache_path], the user's data's
+## default.
+static func _parse_cache_file() -> String:
+	return _scan_cache_path if _scan_cache_path else "user://scan-cache.json"
+
+
+## The parse cache, from its file: when it is this folder's, its version's, its files' lines.
+func _load_parse_cache() -> void:
+	if _parse_cache_loaded:
+		return
+	_parse_cache_loaded = true
+	var path := _parse_cache_file()
+	if not FileAccess.file_exists(path):
+		return
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (parsed is Dictionary):
+		return
+	var payload: Dictionary = parsed
+	var version: int = payload.get("version", 0)
+	if version != _PARSE_CACHE_VERSION:
+		return
+	if str(payload.get("dir", "")) != games_dir():
+		return
+	var files: Variant = payload.get("files", {})
+	if files is Dictionary:
+		_parse_cache = files
+
+
+## The parse cache, to its file: the lines the walk still shows, its folder, its version.
+func _store_parse_cache(files: Array) -> void:
+	var live := {}
+	for entry: Dictionary in files:
+		live[str(entry["path"])] = true
+	for path: String in _parse_cache.keys():
+		if not live.has(str(path)):
+			_parse_cache.erase(path)
+	var out := FileAccess.open(_parse_cache_file(), FileAccess.WRITE)
+	if out == null:
+		return
+	out.store_string(JSON.stringify({"version": _PARSE_CACHE_VERSION,
+		"dir": games_dir(), "files": _parse_cache}))
+	out.close()
+
+
+## The reference cache's file: the tests' [method set_ref_cache_path], the user's data's
+## default.
+static func _ref_cache_file() -> String:
+	return _ref_cache_path if _ref_cache_path else "user://ref-cache.json"
+
+
+## The reference lists' sizes, `{path: bytes}`: the cache's integrity check, a PCK file's
+## standing beside its version (the packaged files' have no mtime).
+static func _ref_sizes() -> Dictionary:
+	var folders: Array[String] = [_TITLES, _PRINTS]
+	var sizes: Dictionary = {}
+	for folder: String in folders:
+		for file_name: String in DirAccess.get_files_at(folder):
+			if not file_name.ends_with(".tsv"):
+				continue
+			var path := folder.path_join(file_name)
+			var file := FileAccess.open(path, FileAccess.READ)
+			if file == null:
+				continue
+			sizes[path] = file.get_length()
+			file.close()
+	return sizes
+
+
+## The cached sizes against the lists' own, in bytes: a JSON number's a float, the lists'
+## [method _ref_sizes]' ints, and the lists' compare's the parser's types' off, so the bytes'
+## the compare, the types' its aside.
+static func _sizes_match(loaded: Variant) -> bool:
+	if not (loaded is Dictionary):
+		return false
+	var live: Dictionary = _ref_sizes()
+	var loaded_dict: Dictionary = loaded
+	if loaded_dict.size() != live.size():
+		return false
+	for key: String in live:
+		if not loaded_dict.has(key):
+			return false
+		var loaded_val: float = loaded_dict[key]
+		var live_val: float = live[key]
+		if loaded_val != live_val:
+			return false
+	return true
+
+
+## The reference DB, from its file: when it is the version's and the lists' sizes' its parsed
+## lines, the run's [constant _ref_loaded] knows it stood and the parse's off.
+static func _load_ref_cache() -> bool:
+	if _ref_loaded:
+		return true
+	var path := _ref_cache_file()
+	if not FileAccess.file_exists(path):
+		return false
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (parsed is Dictionary):
+		return false
+	var payload: Dictionary = parsed
+	var version: int = payload.get("version", 0)
+	if version != _REF_CACHE_VERSION:
+		return false
+	var sizes: Variant = payload.get("sizes", {})
+	if not _sizes_match(sizes):
+		return false
+	var titles: Variant = payload.get("titles", {})
+	if not (titles is Dictionary):
+		return false
+	var print_data: Variant = payload.get("prints", {})
+	if not (print_data is Dictionary):
+		return false
+	var serials: Variant = payload.get("serials", {})
+	if not (serials is Dictionary):
+		return false
+	_title_lists = titles
+	_print_lists = print_data
+	_serial_index = serials
+	_ref_loaded = true
+	return true
+
+
+## The reference DB, to its file: the parsed lines, its version, the lists' sizes.
+static func _store_ref_cache() -> void:
+	var out := FileAccess.open(_ref_cache_file(), FileAccess.WRITE)
+	if out == null:
+		return
+	out.store_string(JSON.stringify({"version": _REF_CACHE_VERSION,
+		"sizes": _ref_sizes(), "titles": _title_lists,
+		"prints": _print_lists, "serials": _serial_index}))
+	out.close()
 
 
 ## The game of [param group] at [param index]: its discs, its parse, its identification.
@@ -1008,13 +1212,16 @@ func _game_of(group: Dictionary, index: int) -> Dictionary:
 		if a["num"] != b["num"]:
 			return a["num"] < b["num"]
 		return a["name"] < b["name"])
-	# The print and the parse of the first file, the serials of every one.
+	# The print and the parse of the first file, the serials of every one: the file's reads
+	# the parse cache stands for (keyed on the file's path, size, and mtime), a rescan's the
+	# bypass, the file read again.
 	var first: Dictionary = entries[0]
 	var first_name: String = first["name"]
-	var crc := _print_of(platform_id, first)
+	var first_parse: Dictionary = _parse_entry(platform_id, first)
+	var crc: String = str(first_parse.get("crc", ""))
 	var serials: Array = []
 	for entry: Dictionary in entries:
-		for serial: String in _serials_of(entry):
+		for serial: Variant in _parse_entry(platform_id, entry).get("serials", []):
 			if serial not in serials:
 				serials.append(serial)
 	# Identification: the print, then the serial, then the name.
@@ -1077,7 +1284,7 @@ func _game_of(group: Dictionary, index: int) -> Dictionary:
 		sizes.append(entry["size"])
 	_file_by_game[game_id] = paths
 	_meta_by_game[game_id] = {"crc32": crc, "serials": serials, "sizes": sizes,
-		"ref_code": ref_code, "chd": _chd_header(platform_id, first)}
+		"ref_code": ref_code, "chd": first_parse.get("chd", null)}
 	return game
 
 
