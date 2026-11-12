@@ -160,7 +160,7 @@ func test_without_the_plugin_and_without_a_form_story_the_form_s_operations_are_
 
 
 func test_without_the_plugin_and_without_a_form_story_a_model_chosen_in_edit_is_saved() -> void:
-	var path := DesktopPlugin._VARIANTS
+	var path := DesktopPlugin._variants_file()
 	var kept := FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
 	var services: AndroidServices = auto_free(AndroidServices.new())
 	var choices := AndroidServices.PlatformSetup.new()

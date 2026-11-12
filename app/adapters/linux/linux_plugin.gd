@@ -174,7 +174,7 @@ static func set_games_dir(dir: String) -> void:
 	_dir_override = dir
 
 
-## The parse cache's file, for tests (`user://scan-cache.json` the default): the scan's
+## The parse cache's file, for tests (the cache dir's `scan-cache.json` the default): the scan's
 ## per-file parse keyed on the file's path, size, and mtime; the second scan of an
 ## unchanged folder reads the parse, not the file.
 static var _scan_cache_path := ""
@@ -186,7 +186,7 @@ static func set_scan_cache_path(path: String) -> void:
 	_scan_cache_path = path
 
 
-## The reference cache's file, for tests (`user://ref-cache.json` the default).
+## The reference cache's file, for tests (the cache dir's `ref-cache.json` the default).
 static func set_ref_cache_path(path: String) -> void:
 	_ref_cache_path = path
 
@@ -1098,7 +1098,7 @@ static func _dup_chd(chd: Variant) -> Variant:
 ## The parse cache's file: the tests' [method set_scan_cache_path], the user's data's
 ## default.
 static func _parse_cache_file() -> String:
-	return _scan_cache_path if _scan_cache_path else "user://scan-cache.json"
+	return _scan_cache_path if _scan_cache_path else cache_dir() + "/scan-cache.json"
 
 
 ## The parse cache, from its file: when it is this folder's, its version's, its files' lines.
@@ -1142,7 +1142,7 @@ func _store_parse_cache(files: Array) -> void:
 ## The reference cache's file: the tests' [method set_ref_cache_path], the user's data's
 ## default.
 static func _ref_cache_file() -> String:
-	return _ref_cache_path if _ref_cache_path else "user://ref-cache.json"
+	return _ref_cache_path if _ref_cache_path else cache_dir() + "/ref-cache.json"
 
 
 ## The reference lists' sizes, `{path: bytes}`: the cache's integrity check, a PCK file's
@@ -1904,8 +1904,7 @@ var _ss: ScreenScraper = null
 var _ss_system: Dictionary = {}
 
 
-## The art folder: `--art-dir=PATH`, the `CARTOUCHE_ART_DIR` environment, or the user's
-## share dir.
+## The art folder: `--art-dir=PATH`, the `CARTOUCHE_ART_DIR` environment, or the cache dir's.
 static func art_dir() -> String:
 	var given := argument("art-dir")
 	if given:
@@ -1913,7 +1912,7 @@ static func art_dir() -> String:
 	var env := OS.get_environment("CARTOUCHE_ART_DIR")
 	if env:
 		return env
-	return ProjectSettings.globalize_path("user://art")
+	return cache_dir() + "/art"
 
 
 static func _art_file_name(game_id: String, file: String) -> String:

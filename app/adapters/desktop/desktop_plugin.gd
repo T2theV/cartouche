@@ -10,10 +10,36 @@ extends RefCounted
 ## The catalog, a demo library and the add form's story as the plugin sends them: see `DesktopDemoTest.kt`, which
 ## keeps it up to date.
 const DEMO := "res://dev/demo/desktop.json"
-const _VARIANTS := "user://console-variants.json"
-## The settings' file, the default: beside the user's other files, the choices made since
-## the app started stand for the next boot too.
-const _SETTINGS_DEFAULT := "user://settings.json"
+## The config directory, `$HOME/.config/cartouche`: the settings, the models, and the key,
+## beside the user's other settings' files.
+static func config_dir() -> String:
+	var dir := _home_dir() + "/.config/cartouche"
+	_ensure_dir(dir)
+	return dir
+
+
+
+## The cache directory, `$HOME/.cache/cartouche`: the caches, the parses, and the art, beside
+## the user's other cache's files.
+static func cache_dir() -> String:
+	var dir := _home_dir() + "/.cache/cartouche"
+	_ensure_dir(dir)
+	return dir
+
+
+
+## The home directory, the user's, or the user's Godot directory's when it stands nowhere.
+static func _home_dir() -> String:
+	var home := OS.get_environment("HOME")
+	if home:
+		return home
+	return ProjectSettings.globalize_path("user://_").get_base_dir()
+
+
+
+static func _ensure_dir(dir: String) -> void:
+	if not DirAccess.dir_exists_absolute(dir):
+		DirAccess.make_dir_recursive_absolute(dir)
 
 var _snapshot := {}
 ## The settings as the plugin sends them, a fresh install's ([method settings_of] the demo's) until changed.
@@ -31,6 +57,7 @@ static var _settings_path := ""
 
 
 func _init() -> void:
+	_migrate_user_files()
 	_load_settings()
 
 
@@ -39,7 +66,7 @@ static func set_settings_path(path: String) -> void:
 
 
 static func _settings_file() -> String:
-	return _settings_path if _settings_path else _SETTINGS_DEFAULT
+	return _settings_path if _settings_path else config_dir() + "/settings.json"
 
 
 ## The settings, from their file: on top of the demo's, the fresh boot's read, the
@@ -61,6 +88,37 @@ func _store_settings() -> void:
 	if out == null:
 		return
 	out.store_string(JSON.stringify(_settings))
+	out.close()
+
+
+
+## The files the app kept in Godot's own directory, over: the settings, the models, the key,
+## and the caches come to the config and cache directories, once, on the first boot after the
+## move; the files' stay where they stood.
+static var _migrated := false
+static func _migrate_user_files() -> void:
+	if _migrated:
+		return
+	_migrated = true
+	var old := ProjectSettings.globalize_path("user://_").get_base_dir()
+	_migrate_file(old + "/settings.json", config_dir() + "/settings.json")
+	_migrate_file(old + "/console-variants.json", config_dir() + "/console-variants.json")
+	_migrate_file(old + "/sskey.json", config_dir() + "/sskey.json")
+	_migrate_file(old + "/scan-cache.json", cache_dir() + "/scan-cache.json")
+	_migrate_file(old + "/ref-cache.json", cache_dir() + "/ref-cache.json")
+
+
+
+## [param from] to [param to], when [param to] is not there yet and [param from] is: the
+## file's copy, the original's beside.
+static func _migrate_file(from: String, to: String) -> void:
+	if FileAccess.file_exists(to) or not FileAccess.file_exists(from):
+		return
+	var data := FileAccess.get_file_as_bytes(from)
+	var out := FileAccess.open(to, FileAccess.WRITE)
+	if out == null:
+		return
+	out.store_buffer(data)
 	out.close()
 
 
@@ -380,7 +438,7 @@ func _keep_variant(id: int, platform_id: String, variant: String) -> String:
 		_with_variants(_current, kept)
 		return library(id)
 	var library_data := _current.duplicate(true) if not _current.is_empty() else demo_library()
-	var file := FileAccess.open(_VARIANTS, FileAccess.WRITE)
+	var file := FileAccess.open(_variants_file(), FileAccess.WRITE)
 	if file == null:
 		return JSON.stringify({"ok": false, "code": "permission_denied"})
 	file.store_string(JSON.stringify(kept))
@@ -402,10 +460,16 @@ static func _with_variants(sent: Dictionary, variants: Dictionary) -> void:
 func _variants() -> Dictionary:
 	if not _snapshot.is_empty():
 		return _snapshot.get("variants", {})
-	if not FileAccess.file_exists(_VARIANTS):
+	if not FileAccess.file_exists(_variants_file()):
 		return {}
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(_VARIANTS))
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(_variants_file()))
 	return data if data is Dictionary else {}
+
+
+
+## The models' file, beside the settings'.
+static func _variants_file() -> String:
+	return config_dir() + "/console-variants.json"
 
 
 ## The games the form story's folder holds, as a scan or a preview reports them.

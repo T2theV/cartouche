@@ -8,7 +8,8 @@ extends RefCounted
 ## app's developer key (a key file), asks for one image at a time. No key file, no requests:
 ## the source is off, and its candidates are not made.
 ##
-## The key file, `--ss-key=PATH`, the `CARTOUCHE_SS_KEY` environment, or `user://sskey.json`:
+## The key file, `--ss-key=PATH`, the `CARTOUCHE_SS_KEY` environment, or the config dir's
+## `sskey.json`:
 ## `{"devid": ..., "devpassword": ..., "softname": ...}`; `ssid` and `sspassword`, when both
 ## are there, name the member the requests go as. The credentials go into the request at
 ## request time only: nothing but this file holds them.
@@ -48,15 +49,15 @@ var _last_request := 0
 var _no_media: Dictionary = {}
 
 
-## Where the key is read: `set_key_path`'s, `--ss-key=`'s, the environment's, or the user's
-## share.
+## Where the key is read: `set_key_path`'s, `--ss-key=`'s, the environment's, or the config
+## dir's `sskey.json`.
 func key_path() -> String:
 	if not _key_path_override.is_empty():
 		return _key_path_override
 	var env := OS.get_environment("CARTOUCHE_SS_KEY")
 	if env != "":
 		return env
-	return ProjectSettings.globalize_path("user://sskey.json")
+	return DesktopPlugin.config_dir() + "/sskey.json"
 
 
 func set_key_path(path: String) -> void:
