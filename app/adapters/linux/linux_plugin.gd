@@ -899,7 +899,11 @@ func _build_library() -> Dictionary:
 	_reports.clear()
 	_skipped_dirs.clear()
 	var files: Array = []
-	_walk(dir, "", 0, files)
+	# The prefilter: walk only the catalog consoles' folders, so the parse cache stops
+	# tracking the root's files and the folders no catalog console claims (their parse
+	# entries would be throwaway).
+	for console: String in _catalog_order():
+		_walk(dir.path_join(console), console, 0, files)
 	var games: Array = []
 	var not_games: Dictionary = {}
 	var unsupported: Array = []

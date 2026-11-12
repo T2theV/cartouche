@@ -81,6 +81,33 @@ func test_scan_cache_round_trip() -> void:
 	assert_str(str(alpha_game.get("platform_id", ""))).is_equal("nes")
 
 
+## The prefilter: the walk descends only into the catalog consoles' folders, so a game beside
+## the folder (at the root) is not the folder's, and a folder no console claims is not walked.
+## The catalog consoles' games stand (two), the root's game not found.
+func test_console_prefilter() -> void:
+	# A game beside the folder (at the root): its print the CRC of its bytes, its platform
+	# the extension's, but the root is not walked, so it is not a game.
+	_write_pattern_file(ROMS.path_join("RootGame.nes"), 16384, 3)
+	# A folder no console claims: its file is not walked, so it is not a game either.
+	DirAccess.make_dir_recursive_absolute(ROMS.path_join("misc"))
+	_write_pattern_file(ROMS.path_join("misc/Stray.nes"), 16384, 4)
+	var p := LinuxPlugin.new()
+	var lib: Dictionary = JSON.parse_string(p.library(1))
+	var library: Dictionary = lib.get("library", {})
+	var games: Array = library.get("games", [])
+	assert_int(games.size()).is_equal(2).override_failure_message(
+		"the prefilter walks only the catalog consoles' folders, got %d games" % games.size())
+	# The catalog consoles' games stand, the root's game and the unclaimed folder's not found.
+	var alpha := _by_title(games, "Alpha")
+	var gamma := _by_title(games, "Gamma")
+	assert_bool(not alpha.is_empty()).override_failure_message("Alpha stands").is_true()
+	assert_bool(not gamma.is_empty()).override_failure_message("Gamma stands").is_true()
+	assert_bool(_by_title(games, "RootGame").is_empty()) \
+		.override_failure_message("the root's game is not walked").is_true()
+	assert_bool(_by_title(games, "Stray").is_empty()) \
+		.override_failure_message("the unclaimed folder's game is not walked").is_true()
+
+
 ## [param games] by title: the one named [param title], or nothing.
 func _by_title(games: Array, title: String) -> Dictionary:
 	for game: Dictionary in games:
