@@ -62,6 +62,7 @@ func test_the_key_stand_in_the_config_directory() -> void:
 ## original's beside.
 func test_the_files_the_app_kept_come_over() -> void:
 	var old_dir := ProjectSettings.globalize_path("user://_").get_base_dir()
+	var old_existed := DirAccess.dir_exists_absolute(old_dir)
 	var saved := {}
 	for file_name: String in ["settings.json", "sskey.json", "ref-cache.json"]:
 		var full := old_dir.path_join(file_name)
@@ -72,6 +73,9 @@ func test_the_files_the_app_kept_come_over() -> void:
 	_write_string(old_dir.path_join("sskey.json"),
 		JSON.stringify({"devid": 1, "devpassword": "p", "softname": "s"}))
 	_write_string(old_dir.path_join("ref-cache.json"), "{\"version\": 1}")
+	DirAccess.make_dir_recursive_absolute(old_dir.path_join("art/poster"))
+	_write_string(old_dir.path_join("art/linux_1.png"), "fake-png")
+	_write_string(old_dir.path_join("art/poster/inside.png"), "fake-png")
 	DesktopPlugin._migrated = false
 	LinuxPlugin.new()
 	assert_bool(FileAccess.file_exists(WORK + "/home/.config/cartouche/settings.json")) \
@@ -80,6 +84,10 @@ func test_the_files_the_app_kept_come_over() -> void:
 		.override_failure_message("the key comes over").is_true()
 	assert_bool(FileAccess.file_exists(WORK + "/home/.cache/cartouche/ref-cache.json")) \
 		.override_failure_message("the reference cache comes over").is_true()
+	assert_bool(FileAccess.file_exists(WORK + "/home/.cache/cartouche/art/linux_1.png")) \
+		.override_failure_message("the art comes over").is_true()
+	assert_bool(FileAccess.file_exists(WORK + "/home/.cache/cartouche/art/poster/inside.png")) \
+		.override_failure_message("the art's subfolders come over").is_true()
 	assert_bool(FileAccess.file_exists(old_dir.path_join("settings.json"))) \
 		.override_failure_message("the original's beside").is_true()
 	for file_name: String in saved:
@@ -88,6 +96,8 @@ func test_the_files_the_app_kept_come_over() -> void:
 	for file_name: String in ["settings.json", "sskey.json", "ref-cache.json"]:
 		if not saved.has(file_name):
 			DirAccess.remove_absolute(old_dir.path_join(file_name))
+	if not old_existed:
+		_wipe(old_dir)
 	DesktopPlugin._migrated = true
 
 

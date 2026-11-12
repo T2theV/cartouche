@@ -106,6 +106,7 @@ static func _migrate_user_files() -> void:
 	_migrate_file(old + "/sskey.json", config_dir() + "/sskey.json")
 	_migrate_file(old + "/scan-cache.json", cache_dir() + "/scan-cache.json")
 	_migrate_file(old + "/ref-cache.json", cache_dir() + "/ref-cache.json")
+	_migrate_dir(old + "/art", cache_dir() + "/art")
 
 
 
@@ -120,6 +121,36 @@ static func _migrate_file(from: String, to: String) -> void:
 		return
 	out.store_buffer(data)
 	out.close()
+
+
+
+## [param from] over [param to], the folder's whole, when [param to] is not there yet:
+## the art.
+static func _migrate_dir(from: String, to: String) -> void:
+	if DirAccess.dir_exists_absolute(to) or not DirAccess.dir_exists_absolute(from):
+		return
+	_migrate_tree(from, to)
+
+
+
+static func _migrate_tree(from: String, to: String) -> void:
+	var dir := DirAccess.open(from)
+	if dir == null:
+		return
+	if not DirAccess.dir_exists_absolute(to):
+		DirAccess.make_dir_recursive_absolute(to)
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		if entry == "." or entry == "..":
+			entry = dir.get_next()
+			continue
+		var full := from.path_join(entry)
+		if dir.current_is_dir():
+			_migrate_tree(full, to.path_join(entry))
+		else:
+			_migrate_file(full, to.path_join(entry))
+		entry = dir.get_next()
 
 
 ## Part [param key] of the desktop demo, or none without the file. Exports ship it: on a device, the debug bridge's
