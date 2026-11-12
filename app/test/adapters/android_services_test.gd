@@ -4,6 +4,16 @@ extends GdUnitTestSuite
 const Fixtures := preload("res://test/screens/fixtures.gd")
 
 
+func before_test() -> void:
+	# The settings' path, off the user's data: a fresh install's settings' the demo's, the
+	# last boot's file its own, so the suite's runs stand for one another.
+	DesktopPlugin.set_settings_path("/tmp/cartouche-android-services-test/settings.json")
+
+
+func after_test() -> void:
+	DesktopPlugin.set_settings_path("")
+
+
 func test_the_shelves_sent_by_the_plugin_are_read_as_the_library_games_they_point_to() -> void:
 	# Shelves point into the library's games by index (`Sent.Library`).
 	var game := func(id: String, platform: String) -> Dictionary:

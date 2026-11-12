@@ -11,6 +11,9 @@ extends RefCounted
 ## keeps it up to date.
 const DEMO := "res://dev/demo/desktop.json"
 const _VARIANTS := "user://console-variants.json"
+## The settings' file, the default: beside the user's other files, the choices made since
+## the app started stand for the next boot too.
+const _SETTINGS_DEFAULT := "user://settings.json"
 
 var _snapshot := {}
 ## The settings as the plugin sends them, a fresh install's ([method settings_of] the demo's) until changed.
@@ -23,6 +26,42 @@ var _story_read := false
 var _arriving: Dictionary[String, int] = {}
 ## The games not seen yet, as the plugin sends them.
 var _arrivals := {"unseen": PackedStringArray(), "announced": {}}
+## The settings' file, for tests (the default's when empty).
+static var _settings_path := ""
+
+
+func _init() -> void:
+	_load_settings()
+
+
+static func set_settings_path(path: String) -> void:
+	_settings_path = path
+
+
+static func _settings_file() -> String:
+	return _settings_path if _settings_path else _SETTINGS_DEFAULT
+
+
+## The settings, from their file: on top of the demo's, the fresh boot's read, the
+## start's answer (`--backdrop`, `--pixel-veil`) still ahead of them.
+func _load_settings() -> void:
+	var path := _settings_file()
+	if not FileAccess.file_exists(path):
+		return
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (parsed is Dictionary):
+		return
+	var stored: Dictionary = parsed
+	_settings.merge(settings_of(stored), true)
+
+
+## The settings, to their file: the next boot's read.
+func _store_settings() -> void:
+	var out := FileAccess.open(_settings_file(), FileAccess.WRITE)
+	if out == null:
+		return
+	out.store_string(JSON.stringify(_settings))
+	out.close()
 
 
 ## Part [param key] of the desktop demo, or none without the file. Exports ship it: on a device, the debug bridge's
@@ -188,6 +227,7 @@ func saveSetting(_id: int, key: String, value: String) -> String:
 			_settings[key] = value.to_int()
 		_:
 			_settings[key] = value
+	_store_settings()
 	return JSON.stringify({"ok": true})
 
 
