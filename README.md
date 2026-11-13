@@ -1,3 +1,95 @@
+# Cartouche for Linux
+
+**This is an A.I. driven fork of [Hakimba's Cartouche](https://github.com/Hakimba/cartouche), porting it to
+x86_64 Linux, and a candidate for the new frontend of the [Cumulus Emulation Project](https://github.com/Cumulus-Emulation/cumulus).**
+The original is an Android app; this fork replaces its Android and Kotlin layer with a pure-GDScript Linux
+adapter (`app/adapters/linux/`) that does the same job on a Linux box: it scans a real folder of ROMs and
+disc images, recognises each game from its own file (a cartridge's CRC32, a disc's serial), settles its
+label from LaunchBox, ScreenScraper or PlayStation DataCenter, and starts it in the emulators you already
+have, through a `cartouche.conf` player list.
+
+## Running
+
+The build is one x86_64 binary and its pack, `cartouche-linux.x86_64` beside `cartouche-linux.pck`. Start it
+with the folder that holds your games, one subfolder per console (`psx/`, `nes/`, …):
+
+```sh
+./cartouche-linux.x86_64 -- --games-dir=/ROMs
+```
+
+The fork's options are read **after the `--` separator**; the engine takes its own flags (`--headless`,
+`--quit-after N`, …) before it.
+
+| Option | What it is |
+|---|---|
+| `--games-dir=PATH` | The root of your games, one folder per console. Without it: the `CARTOUCHE_GAMES_DIR` environment, then `roms/` beside the binary. |
+| `--config=PATH` | The player list, `cartouche.conf`. Without it: the `CARTOUCHE_CONFIG` environment, then `cartouche.conf` beside the binary, then beside the working directory. |
+| `--ss-key=PATH` | The ScreenScraper key file, JSON `{devid, devpassword, softname, ssid?, sspassword?}`. Without it: the `CARTOUCHE_SS_KEY` environment, then `sskey.json` in the config directory. Absent, the source is off and LaunchBox answers. |
+| `--label-source=X` | Ask one label source only, `screenscraper`, `launchbox` or `psxdatacenter`. Without it, all three, in that order. |
+| `--label-region=strict` | A label must be the game's own region (a bare `--label-region` counts). The default asks the other regions too, closest first. |
+| `--art-dir=PATH` | Where the labels are kept. Without it, the cache directory. |
+| `--play=GAME_ID` | Scan, launch that one game (or rehearse it, as the conf says), print the report, and leave: 0 for launched or rehearsed, 1 otherwise. |
+| `--list` | One line per game — `id  platform  identified  title` — and leave: the library for a terminal, no display. |
+
+The run's own folders: the settings (the language, the console variants, the key) in
+`$HOME/.config/cartouche/`, the caches and the labels in `$HOME/.cache/cartouche/`.
+
+The library is scanned **once, on the startup**; after that the run keeps what the scan found, and a game
+added or removed from the folder shows after the next start.
+
+### The player list
+
+`cartouche.conf` names the emulators, one line per player:
+
+```
+rehearsal = true
+path = /usr/games
+[wii]
+dolphin-emu = dolphin-emu {file.path}
+```
+
+`rehearsal` rehearses every launch (it prints the command, runs nothing — no emulator needed); `path` and
+`alias.NAME` resolve the binaries ahead of the system PATH; each console's section names its players, and
+the first installed player whose `accept` regex takes the file runs the game.
+
+## Building
+
+The Linux port is pure GDScript — one engine and its templates, nothing compiled.
+
+**To build**, Godot 4.7.2 (Linux x86_64) with the export templates of the same version (in
+`~/.local/share/godot/export_templates/4.7.2.stable/`). The project root is `app/`; the export writes the
+binary beside its pack:
+
+```sh
+godot --headless --path app --export-release "Linux" build/cartouche-linux.x86_64
+```
+
+**To test**, GdUnit4 6.2.1 is fetched and sha256-pinned by `scripts/test_godot.sh` (symlinked into
+`app/addons/gdUnit4`, git-ignored); the suite gives every test file its own process:
+
+```sh
+bash app/dev/run_tests.sh                             # every test file
+bash app/dev/run_tests.sh test/linux/refresh_test.gd  # one
+```
+
+**To run**, besides the binary: an x86_64 Linux box, a Vulkan-capable GPU for the windowed app (software
+Vulkan, llvmpipe, works too), the emulators of the consoles you want to launch (a rehearsal needs none),
+and internet for the first label downloads — LaunchBox, ScreenScraper, PlayStation DataCenter — every
+label kept after the first time.
+
+The original's Android build (JDK 17, the Android SDK, Gradle) is unchanged in its section below.
+
+## Thanks
+
+This fork stands on [Hakimba's Cartouche](https://github.com/Hakimba/cartouche): the design, the carousel,
+the domain, and a codebase built to be forked — thank you, Hakim, for building it to be made one's own.
+And with it, the projects it draws on, the inspirations of the original, each with its licence in
+[the credits below](#credits): Daijishō's platform and emulator definitions, the Redump and No-Intro
+lists and the cartridge CRC32s of libretro-database, LaunchBox's scans, ScreenScraper's images,
+PlayStation DataCenter's serial scans, the fonts of the labels and the text, and the Godot Engine.
+
+---
+
 # Cartouche
 
 A game launcher for Android handhelds that shows your games as physical discs and cartridges.
