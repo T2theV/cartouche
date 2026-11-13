@@ -169,8 +169,8 @@ func _load_catalog() -> void:
 ## the way a terminal would read it, so a console report needs no display.
 func _cli_list() -> void:
 	var answer: Dictionary = await _request(&"library")
-	var view: Dictionary = JSON.parse_string(str(answer.get("library", "{}")))
-	var games: Array = view.get("games", [])
+	var lib: Dictionary = answer.get("library", {})
+	var games: Array = lib.get("games", [])
 	for game: Dictionary in games:
 		print("%s\t%s\t%d\t%s" % [str(game["id"]), str(game["platform_id"]),
 			1 if game["identified"] else 0, str(game["title"])])
