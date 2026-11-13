@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 extends GdUnitTestSuite
-## The refresh (a re-read the user did not ask for, a console folder's): a walk the last scan's
-## walk left and the caches hold the reads reads nothing and stands the library as it stood; a
-## file the folder brought is the only one read; a file the folder lost is gone, and no read.
+## The one scan is the startup's: the folder's one walk, the files the caches do not hold read
+## once. A refresh (a re-read the user did not ask for, one console a request) walks nothing
+## and reads nothing, the library as it stands; a file the folder brought, or lost, shows
+## only in a new run — the restart, its one scan.
 
 const WORK := "/tmp/cartouche-refresh-test"
 const ROMS := WORK + "/roms"
@@ -19,6 +20,7 @@ func before_test() -> void:
 	LinuxPlugin.set_ref_cache_path(WORK + "/ref-cache.json")
 	DesktopPlugin.set_settings_path(WORK + "/settings.json")
 	LinuxPlugin._parse_io = 0
+	LinuxPlugin._walk_io = 0
 
 
 func after_test() -> void:
@@ -27,61 +29,107 @@ func after_test() -> void:
 	LinuxPlugin.set_ref_cache_path("")
 	DesktopPlugin.set_settings_path("")
 	LinuxPlugin._parse_io = 0
+	LinuxPlugin._walk_io = 0
 	_wipe(WORK)
 
 
-## A folder that did not change: its walk the last scan's walk left, its caches hold its reads,
-## so the refresh reads nothing, and the library stands as it stood.
-func test_the_refresh_reads_nothing_the_folder_does_not_change() -> void:
+## The startup's scan: the folder's one walk, every game file the cold caches' read. A refresh
+## (a re-read the user did not ask for, one console a request) walks nothing, reads nothing,
+## and stands the library as it stood.
+func test_the_startup_scan_is_the_one_scan() -> void:
 	var p := LinuxPlugin.new()
 	var lib: Dictionary = JSON.parse_string(p.library(1))
 	var library: Dictionary = lib.get("library", {})
 	var games: Array = library.get("games", [])
 	assert_int(games.size()).is_equal(2)
+	assert_int(LinuxPlugin._walk_io).is_equal(1) \
+		.override_failure_message("the startup's scan is the one walk, got %d" % LinuxPlugin._walk_io)
 	assert_int(LinuxPlugin._parse_io).is_equal(2)
 
 	LinuxPlugin._parse_io = 0
-	var answer: Dictionary = JSON.parse_string(p.refreshPlatform(1, "psx"))
-	assert_bool(answer.get("ok", false)).override_failure_message("the refresh stands").is_true()
-	assert_int(LinuxPlugin._parse_io).is_zero() \
-		.override_failure_message("the unchanged folder's refresh reads no file, got %d" % LinuxPlugin._parse_io)
-	var games_in_answer: int = answer.get("games", -1)
-	assert_int(games_in_answer).is_equal(2) \
-		.override_failure_message("the library stands as it stood, got %d" % games_in_answer)
+	LinuxPlugin._walk_io = 0
+	var platform_ids := PackedStringArray(["psx", "nes"])
+	for platform_id: String in platform_ids:
+		var answer: Dictionary = JSON.parse_string(p.refreshPlatform(1, platform_id))
+		assert_bool(answer.get("ok", false)).override_failure_message("the refresh stands").is_true()
+		var answer_library: Dictionary = answer.get("library", {})
+		var answer_games: Array = answer_library.get("games", [])
+		assert_int(answer_games.size()).is_equal(2) \
+			.override_failure_message("the library stands as it stood, got %d" % answer_games.size())
+		assert_int(LinuxPlugin._walk_io).is_zero() \
+			.override_failure_message("the refresh's no walk, got %d" % LinuxPlugin._walk_io)
+		assert_int(LinuxPlugin._parse_io).is_zero() \
+			.override_failure_message("the refresh's no read, got %d" % LinuxPlugin._parse_io)
 	var lib2: Dictionary = JSON.parse_string(p.library(1))
 	assert_bool(lib2 == lib).override_failure_message("the library stands as it stood").is_true()
 
 
-## A file the folder brought: the only one the refresh reads, its game's in the library.
-func test_the_refresh_brings_the_files_the_folder_brought() -> void:
+## A file the folder brought: the running run's refresh shows it not (no walk, no read, the
+## library as it stood); a new run's one scan does, its file the only one read.
+func test_the_new_game_shows_only_after_a_restart() -> void:
 	var p := LinuxPlugin.new()
 	p.library(1)
 	assert_int(LinuxPlugin._parse_io).is_equal(2)
+	assert_int(LinuxPlugin._walk_io).is_equal(1)
 
 	_write_pattern_file(ROMS.path_join("psx/Delta.iso"), 65536, 3)
 	LinuxPlugin._parse_io = 0
+	LinuxPlugin._walk_io = 0
 	var answer: Dictionary = JSON.parse_string(p.refreshPlatform(1, "psx"))
-	var games_in_answer: int = answer.get("games", -1)
-	assert_int(games_in_answer).is_equal(3) \
-		.override_failure_message("the new game's in the library, got %d" % games_in_answer)
+	assert_int(LinuxPlugin._walk_io).is_zero() \
+		.override_failure_message("the new game's no walk, the restart's, got %d" % LinuxPlugin._walk_io)
+	assert_int(LinuxPlugin._parse_io).is_zero() \
+		.override_failure_message("the new game's no read, the restart's, got %d" % LinuxPlugin._parse_io)
+	var answer_library: Dictionary = answer.get("library", {})
+	var answer_games: Array = answer_library.get("games", [])
+	assert_int(answer_games.size()).is_equal(2) \
+		.override_failure_message("the new game's not shown until a restart, got %d" % answer_games.size())
+
+	LinuxPlugin._parse_io = 0
+	LinuxPlugin._walk_io = 0
+	var q := LinuxPlugin.new()
+	var restart: Dictionary = JSON.parse_string(q.library(1))
+	var restart_library: Dictionary = restart.get("library", {})
+	var restart_games: Array = restart_library.get("games", [])
+	assert_int(restart_games.size()).is_equal(3) \
+		.override_failure_message("the restart's one scan brings the new game, got %d" % restart_games.size())
+	assert_int(LinuxPlugin._walk_io).is_equal(1) \
+		.override_failure_message("the restart's one scan is the one walk, got %d" % LinuxPlugin._walk_io)
 	assert_int(LinuxPlugin._parse_io).is_equal(1) \
-		.override_failure_message("only the new file is read, got %d" % LinuxPlugin._parse_io)
+		.override_failure_message("the restart's one scan reads the new file only, got %d" % LinuxPlugin._parse_io)
 
 
-## A file the folder lost: gone from the walk, gone from the library, and no read.
-func test_the_refresh_leaves_the_files_the_folder_lost() -> void:
+## A file the folder lost: the running run's refresh shows it still (no walk, no read, the
+## library as it stood); a new run's one scan has it gone.
+func test_the_lost_game_is_gone_after_a_restart() -> void:
 	var p := LinuxPlugin.new()
 	p.library(1)
 	assert_int(LinuxPlugin._parse_io).is_equal(2)
+	assert_int(LinuxPlugin._walk_io).is_equal(1)
 
 	DirAccess.remove_absolute(ROMS.path_join("psx/Gamma.iso"))
 	LinuxPlugin._parse_io = 0
+	LinuxPlugin._walk_io = 0
 	var answer: Dictionary = JSON.parse_string(p.refreshPlatform(1, "psx"))
-	var games_in_answer: int = answer.get("games", -1)
-	assert_int(games_in_answer).is_equal(1) \
-		.override_failure_message("the lost game's gone, got %d" % games_in_answer)
+	assert_int(LinuxPlugin._walk_io).is_zero() \
+		.override_failure_message("the lost game's no walk, the restart's, got %d" % LinuxPlugin._walk_io)
 	assert_int(LinuxPlugin._parse_io).is_zero() \
-		.override_failure_message("the lost file's no read, got %d" % LinuxPlugin._parse_io)
+		.override_failure_message("the lost game's no read, the restart's, got %d" % LinuxPlugin._parse_io)
+	var answer_library: Dictionary = answer.get("library", {})
+	var answer_games: Array = answer_library.get("games", [])
+	assert_int(answer_games.size()).is_equal(2) \
+		.override_failure_message("the lost game stands until a restart, got %d" % answer_games.size())
+
+	LinuxPlugin._parse_io = 0
+	LinuxPlugin._walk_io = 0
+	var q := LinuxPlugin.new()
+	var restart: Dictionary = JSON.parse_string(q.library(1))
+	var restart_library: Dictionary = restart.get("library", {})
+	var restart_games: Array = restart_library.get("games", [])
+	assert_int(restart_games.size()).is_equal(1) \
+		.override_failure_message("the restart's one scan leaves the lost game, got %d" % restart_games.size())
+	assert_int(LinuxPlugin._parse_io).is_zero() \
+		.override_failure_message("the kept file's cached, no read, got %d" % LinuxPlugin._parse_io)
 
 
 ## [param size] bytes of a deterministic pattern (tagged), to [param path].

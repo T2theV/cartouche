@@ -113,11 +113,6 @@ var _reports := {}
 var _skipped_dirs: Array = []
 var _scan_ms := 0
 var _scanned := false
-## The files the last scan's walk held (their names, sizes, and stamps); a re-read that walks
-## them again as the caches hold them stands the library, not the scan.
-var _walk_signature := ""
-## Whether the last scan built the library (a re-read that changed nothing did not).
-var _rebuilt := true
 var _parse_cache: Dictionary = {}
 var _parse_cache_loaded := false
 var _cache_bypass := false
@@ -178,6 +173,8 @@ static func set_games_dir(dir: String) -> void:
 ## per-file parse keyed on the file's path, size, and mtime; the second scan of an
 ## unchanged folder reads the parse, not the file.
 static var _scan_cache_path := ""
+## The walks this run did (one per [method _build_library]): the one scan is the startup's.
+static var _walk_io := 0
 ## The parses this run did for real, a test's measure of the parse cache's work.
 static var _parse_io := 0
 
@@ -627,10 +624,11 @@ func launchGame(_id: int, launch: Dictionary) -> String:
 	return JSON.stringify({"ok": true, "code": &"linux_launched", "detail": "launched: %s" % command})
 
 
-## Scans the folder again, [param bypass] every game file read anew, the caches' reads standing
-## for the rest; no label is looked for (there is no ScreenScraper here, by design).
-func _rescan(bypass: bool) -> Dictionary:
-	_cache_bypass = bypass
+## The forced rescan ([method scanPlatform], [method rescrape]): every game file read anew,
+## the caches' reads standing for the rest; no label is looked for (there is no
+## ScreenScraper here, by design).
+func _rescan() -> Dictionary:
+	_cache_bypass = true
 	_scanned = false
 	var answer: Dictionary = _library_answer()
 	var games: Array = _current.get("games", [])
@@ -640,13 +638,13 @@ func _rescan(bypass: bool) -> Dictionary:
 
 
 func rescrape(_id: int) -> String:
-	return JSON.stringify(_rescan(true))
+	return JSON.stringify(_rescan())
 
 
 ## The scan of [param platform_id]'s folder: the folder is one for every platform here, so the
 ## scan is the whole scan, and the report its own.
 func scanPlatform(_id: int, platform_id: String) -> String:
-	var answer: Dictionary = _rescan(true)
+	var answer: Dictionary = _rescan()
 	answer["report"] = _scan_report(platform_id)
 	return JSON.stringify(answer)
 
@@ -720,9 +718,11 @@ func leaveGame(_id: int, _game_id: String) -> String:
 	return JSON.stringify({"ok": true, "arrivals": {"unseen": [], "announced": {}}})
 
 
-## The refresh's answer: a rescan, and no arrivals on a Linux scan (the demo's).
+## The refresh's answer: the library as it stands, no rescan here — the one scan is the
+## startup's, a new game shows after a restart, by design — and no arrivals on a Linux
+## scan (the demo's).
 func refreshPlatform(_id: int, _platform_id: String) -> String:
-	var answer: Dictionary = _rescan(false)
+	var answer: Dictionary = _library_answer()
 	answer["arrivals"] = {"unseen": [], "announced": {}}
 	return JSON.stringify(answer)
 
@@ -811,10 +811,7 @@ func _ensure_scanned() -> void:
 	var started := Time.get_ticks_msec()
 	_current = _build_library()
 	_scan_ms = Time.get_ticks_msec() - started
-	if _rebuilt:
-		print(_scan_summary())
-	else:
-		print(_scan_brief())
+	print(_scan_summary())
 
 
 func _read_data() -> void:
@@ -911,13 +908,7 @@ func _build_library() -> Dictionary:
 	# entries would be throwaway).
 	for console: String in _catalog_order():
 		_walk(dir.path_join(console), console, 0, files)
-	var signature := _walk_signature_of(files)
-	# The last scan's walk, and the caches hold the reads: the library stands as it stood, and
-	# no file is read.
-	if not _cache_bypass and signature == _walk_signature and not _current.is_empty():
-		_rebuilt = false
-		return _current
-	_rebuilt = true
+	_walk_io += 1
 	var games: Array = []
 	var not_games: Dictionary = {}
 	var unsupported: Array = []
@@ -1015,7 +1006,6 @@ func _build_library() -> Dictionary:
 		"skipped_folders": _skipped_dirs.size()}
 	_store_parse_cache(files)
 	_cache_bypass = false
-	_walk_signature = signature
 	return library_data
 
 
@@ -1050,14 +1040,6 @@ func _walk(dir: String, rel: String, depth: int, files: Array) -> void:
 		files.append({"path": path, "name": name,
 			"rel": name if rel.is_empty() else rel.path_join(name),
 			"size": _size_of(path), "mtime": _mtime_of(path)})
-
-
-## The files the walk held, by name, size, and stamp: the folder's own signature.
-static func _walk_signature_of(files: Array) -> String:
-	var parts: PackedStringArray = []
-	for file: Dictionary in files:
-		parts.append("%s:%s:%s" % [str(file["path"]), str(file["size"]), str(file["mtime"])])
-	return "\n".join(parts)
 
 
 ## The file's mtime, unix seconds: the parse cache's key beside its size.
@@ -2532,18 +2514,6 @@ func _scan_summary() -> String:
 			var game: Dictionary = games[index]
 			lines.append("    %s" % _one_line(game))
 	return "\n".join(lines)
-
-
-## The line a re-read that changed nothing reports: the library stands as it stood.
-func _scan_brief() -> String:
-	var games: Array = _current.get("games", [])
-	var shelves: Array = _current.get("shelves", [])
-	var identified := 0
-	for game: Dictionary in games:
-		if game["identified"]:
-			identified += 1
-	return "  %d games on %d consoles, %d identified, the folder has not changed" % [
-		games.size(), shelves.size(), identified]
 
 
 func _one_line(game: Dictionary) -> String:
