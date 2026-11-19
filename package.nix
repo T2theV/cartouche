@@ -53,8 +53,8 @@ pkgs.stdenv.mkDerivation rec {
   src = (pkgs.fetchFromGitHub {
     owner = "T2theV";
     repo = "cartouche";
-    rev = "13791c3da9e5ca250fca0d2dfcc7421d9c495530";
-    hash = "sha256-38O6gskw9zstlFBKINt4Eb4kUBShBequ6vzZ2m+zz/8";
+    rev = "f4a60115b885917a63066cb5780555f1acda2a1f";
+    hash = "sha256-DZdDMsE/5dVcvLFfsEHNqtb2NkPhfVeaU2pl9OTParY";
   }) + "/app";
 
   nativeBuildInputs = [ pkgs.unzip pkgs.glibc ];
