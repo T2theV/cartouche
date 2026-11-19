@@ -104,12 +104,6 @@
                 "medium": "ps2_dvd"
             },
             {
-                "id": "ps3",
-                "name": "Sony PlayStation 3",
-                "media": "dvd",
-                "medium": "ps3_disc"
-            },
-            {
                 "id": "psvita",
                 "name": "Sony PS Vita",
                 "media": "cartridge",
