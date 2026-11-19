@@ -88,5 +88,6 @@
   "dreamcast": {"media": "dvd", "medium": {"default": "dreamcast_gd"}, "minimumGameBytes": 0, "screenScraperSystem": 23},
   "segacd": {"media": "dvd", "medium": {"default": "segacd_cd"}, "minimumGameBytes": 0},
   "xbox": {"media": "dvd", "medium": {"default": "xbox_dvd"}, "minimumGameBytes": 16000000, "screenScraperSystem": 32, "art": {"kind": "disc"}},
+  "ps3": {"media": "dvd", "medium": {"default": "ps3_disc"}, "minimumGameBytes": 16000000, "art": {"kind": "disc"}},
   "xbox360": {"media": "dvd", "medium": {"default": "xbox360_dvd"}, "minimumGameBytes": 1048576, "screenScraperSystem": 33, "art": {"kind": "disc"}}
 }

@@ -76,7 +76,14 @@ var catalog := CatalogSummary.new({})
 ## The library's revision, as the latest answer told it: one more at each write of the plugin.
 var library_revision := 0
 
-var _plugin: Object = Engine.get_singleton(_SINGLETON) if Engine.has_singleton(_SINGLETON) else DesktopPlugin.new()
+var _plugin: Object = Engine.get_singleton(_SINGLETON) if Engine.has_singleton(_SINGLETON) else _initial_plugin()
+
+static func _initial_plugin() -> Object:
+	# On a Linux desktop the Android plugin is absent: [LinuxPlugin] stands in, scanning a real
+	# folder of game files (the demo's when there are none).
+	if OS.get_name() == "Linux":
+		return LinuxPlugin.new()
+	return DesktopPlugin.new()
 var _last_request_id := 0
 ## The system's font list, read on a worker while the main scene loads (nothing shapes text before the
 ## tree starts): read on first need instead, by the first text with a letter its font lacks, such as a
@@ -104,10 +111,29 @@ func _ready() -> void:
 	if OS.has_feature("android"):
 		AndroidButtons.follow_android()
 	_load_catalog()
+	if _plugin is LinuxPlugin and LinuxPlugin.argument("play") != "":
+		_cli_launch()
+	if _plugin is LinuxPlugin and LinuxPlugin.argument("list") != "":
+		_cli_list()
+
+
+## The `--play=GAME_ID` argument: one launch from the command line, the container's way to run a
+## game (headless or through the display server): the library is scanned, the launch rehearsed
+## or run as the conf says, the report the plugin prints stands in the terminal, and the app
+## leaves — the emulator is left to the container.
+func _cli_launch() -> void:
+	var game_id := LinuxPlugin.argument("play")
+	await _request(&"library")
+	var result: Dictionary = await _request(&"launchGame", [{"game_id": game_id, "disc": 0}])
+	var done: bool = result.get("ok", false) == true or result.get("code", "") == &"linux_printed"
+	print("Cartouche (Linux) — --play: %s" % str(result.get("detail", "")))
+	get_tree().quit(0 if done else 1)
 
 
 func is_available() -> bool:
-	return _plugin is not DesktopPlugin
+	# The Linux plugin scans a real folder like the Android bridge's, and its signals carry
+	# the answers; it stands in for the bridge, not for the demo.
+	return _plugin is not DesktopPlugin or _plugin is LinuxPlugin
 
 
 ## Whether the desktop shows a snapshot of a device's data (`--snapshot=DIR`).
@@ -134,6 +160,18 @@ func _load_catalog() -> void:
 	if Diagnostics.enabled:
 		Diagnostics.trace("plugin", "catalog read in %.1f ms, loaded in %.1f ms" % [(read - started) / 1000.0,
 			(Time.get_ticks_usec() - read) / 1000.0])
+
+
+## The `--list` argument: one line per game, `id  platform  identified  title` — the library
+## the way a terminal would read it, so a console report needs no display.
+func _cli_list() -> void:
+	var answer: Dictionary = await _request(&"library")
+	var lib: Dictionary = answer.get("library", {})
+	var games: Array = lib.get("games", [])
+	for game: Dictionary in games:
+		print("%s\t%s\t%d\t%s" % [str(game["id"]), str(game["platform_id"]),
+			1 if game["identified"] else 0, str(game["title"])])
+	get_tree().quit(0)
 
 
 ## Installed players of [param platform_id], in definition order.

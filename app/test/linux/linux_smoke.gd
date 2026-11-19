@@ -1,0 +1,288 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+extends Node
+## The headless smoke test of [LinuxPlugin]: it scans the fixture folder (the `--games-dir`
+## argument), rehearses each launch, checks the scan and the rehearsal, and quits with the
+## number of failures.
+##
+## Run:
+##   godot --headless --path <app> res://test/linux/linux_smoke.tscn -- --games-dir=<roms>
+##
+## The fixtures, in `roms/` beside the app, each matched against the bundled reference lists:
+## a Tetris NES ROM (its print in the NES prints), a Super Mario World SNES ROM (its 512-byte
+## copier header not in its print), a zipped Super Mario Bros ROM (its print the CRC its archive
+## records), a Final Fantasy X PS2 disc as a MAME v5 CHD (its serial in the PS2 titles), and a
+## Final Fantasy VII PSX disc as a plain ISO (its serial in the PSX titles); beside them a file
+## too small to be a game and one no platform lists, and, under folders named for platforms, a
+## Dreamcast CHD and a GameCube RVZ (the folder, not the extension, is the platform) and a bios
+## under a folder no platform names (not a game).
+
+var _failures := 0
+
+
+func _ready() -> void:
+	print("== Cartouche (Linux) smoke test ==")
+	var roms := LinuxPlugin.games_dir()
+	print("games dir: %s" % roms)
+	var plugin := LinuxPlugin.new()
+	var reports: Array = []
+	plugin.launch_reported.connect(func(r: Dictionary) -> void: reports.append(r))
+
+	# -- the library -----------------------------------------------------------
+	var answer: Dictionary = JSON.parse_string(plugin.library(1))
+	var ok: bool = answer.get("ok", false)
+	_check(ok, "library answers ok")
+	var library: Dictionary = answer.get("library", {})
+	var library_holds_games: bool = library is Dictionary and not library.is_empty()
+	_check(library_holds_games, "library is JSON")
+	var games: Array = library.get("games", [])
+	_check(games.size() == 12, "12 games found, got %d" % games.size())
+	var shelves: Array = library.get("shelves", [])
+	_check(shelves.size() == 9, "9 shelves, got %d" % shelves.size())
+	var by_title := {}
+	for game: Dictionary in games:
+		var game_title: String = str(game["title"])
+		by_title[game_title] = game
+	_check("Tetris" in by_title, "Tetris in the library")
+	_check("Super Mario World" in by_title, "Super Mario World in the library")
+	_check("Super Mario Bros." in by_title, "Super Mario Bros (the zip) in the library")
+	_check("Final Fantasy X" in by_title, "Final Fantasy X in the library")
+	_check("Final Fantasy VII (Europe) (Disc 1)" in by_title, "Final Fantasy VII in the library")
+	var tetris: Dictionary = by_title.get("Tetris", {})
+	var tetris_platform: String = str(tetris.get("platform_id", ""))
+	_check(tetris_platform == "nes", "Tetris is a nes game, got %s" % tetris_platform)
+	var tetris_identified: bool = tetris.get("identified", false)
+	_check(tetris_identified, "Tetris identified by its print")
+	var smw: Dictionary = by_title.get("Super Mario World", {})
+	var smw_platform: String = str(smw.get("platform_id", ""))
+	_check(smw_platform == "snes", "Super Mario World is a snes game, got %s" % smw_platform)
+	var smb: Dictionary = by_title.get("Super Mario Bros.", {})
+	var smb_platform: String = str(smb.get("platform_id", ""))
+	_check(smb_platform == "nes", "the zip's ROM makes it a nes game, got %s" % smb_platform)
+	var ffx: Dictionary = by_title.get("Final Fantasy X", {})
+	var ffx_platform: String = str(ffx.get("platform_id", ""))
+	_check(ffx_platform == "ps2", "Final Fantasy X is a ps2 game, got %s" % ffx_platform)
+	var ffx_serials: Array = ffx.get("serials", [])
+	_check("SLPM_661.24" in ffx_serials, "FFX serial SLPM_661.24 read from its CHD, got %s" % str(ffx_serials))
+	var ffx_identified: bool = ffx.get("identified", false)
+	_check(ffx_identified, "FFX identified by its serial")
+	var ffx7: Dictionary = by_title.get("Final Fantasy VII (Europe) (Disc 1)", {})
+	var ffx7_platform: String = str(ffx7.get("platform_id", ""))
+	_check(ffx7_platform == "psx", "Final Fantasy VII is a psx game, got %s" % ffx7_platform)
+	var ffx7_serials: Array = ffx7.get("serials", [])
+	_check("SCES_008.67" in ffx7_serials, "FFVII serial SCES_008.67 read from its ISO, got %s" % str(ffx7_serials))
+	var ffx7_identified: bool = ffx7.get("identified", false)
+	_check(ffx7_identified, "FFVII identified by its serial")
+	var sa: Dictionary = by_title.get("Sonic Adventure (USA)", {})
+	var sa_platform: String = str(sa.get("platform_id", ""))
+	_check(sa_platform == "dreamcast", "the folder makes it a dreamcast game, got %s" % sa_platform)
+	var fzero: Dictionary = by_title.get("F-Zero GX", {})
+	var fzero_platform: String = str(fzero.get("platform_id", ""))
+	_check(fzero_platform == "gc", "the folder makes it a gc game, got %s" % fzero_platform)
+
+	# -- the set-aside files ----------------------------------------------------
+	var not_games: Dictionary = library.get("not_games", {})
+	var nes_not_games: Array = not_games.get("nes", [])
+	_check("too_small.nes" in nes_not_games, "too_small.nes is a not_game of nes")
+	var ignored: Dictionary = library.get("ignored_counts", {})
+	var unsupported_count := 0
+	for entry: Dictionary in ignored.get("*", []):
+		if str(entry.get("reason", "")) == "unsupported":
+			unsupported_count = entry.get("count", 0)
+	_check(unsupported_count == 2, "readme.txt and the bios are the unsupported files, got %d" % unsupported_count)
+
+	# -- the label's region ----------------------------------------------------------
+	# Without the flag the first region's file stands in for any; with
+	# `--label-region=strict` (here through set_label_region) it is the game's
+	# own region's, or nothing.
+	var smw_loose: Array = plugin._art_candidates(smw)
+	var smw_loose_file: String = str(smw_loose[0]["file"]) if smw_loose.size() > 0 else ""
+	_check(smw_loose_file == "a8dfd64e-9c01-4889-8be9-34bcf856cfab.jpg", "no flag: the first region's file (Brazil), got %s" % smw_loose_file)
+	LinuxPlugin.set_label_region("strict")
+	var smw_strict: Array = plugin._art_candidates(smw)
+	var smw_strict_file: String = str(smw_strict[0]["file"]) if smw_strict.size() > 0 else ""
+	_check(smw_strict_file == "a4906ecc-e7dd-4bda-ab8e-b57a461794d0.png", "strict: the USA game's North America label, got %s" % smw_strict_file)
+	var ffx_strict: Array = plugin._art_candidates(ffx)
+	var ffx_strict_file: String = str(ffx_strict[0]["file"]) if ffx_strict.size() > 0 else ""
+	_check(ffx_strict_file == "r2_c3b87db1-9fa1-4617-a78b-509963c2df52.png", "strict: the Japan game's Japan label, got %s" % ffx_strict_file)
+	LinuxPlugin.set_label_region("")
+	var smw_again: Array = plugin._art_candidates(smw)
+	var smw_again_file: String = str(smw_again[0]["file"]) if smw_again.size() > 0 else ""
+	_check(smw_again_file == "a8dfd64e-9c01-4889-8be9-34bcf856cfab.jpg", "flag off again: the first region's file, got %s" % smw_again_file)
+	_check(LinuxPlugin._label_region_key("USA") == "North America", "the tag maps to the index's region name")
+	_check(LinuxPlugin._label_region_key("USA, Asia") == "North America", "a multi-region tag stands for its first")
+	# A multi-region title identified by its name: `(USA, Europe)` and `(USA, Asia)` stand
+	# for North America.
+	LinuxPlugin.set_label_region("strict")
+	var fzmax: Dictionary = by_title.get("F-Zero - Maximum Velocity (USA, Europe)", {})
+	var fzmax_cands: Array = plugin._art_candidates(fzmax)
+	var fzmax_file: String = str(fzmax_cands[0]["file"]) if fzmax_cands.size() > 0 else ""
+	_check(fzmax_file == "r2_8b7046b2-a0d1-4992-b444-f94742132a55.png", "strict: (USA, Europe) stands for North America, got %s" % fzmax_file)
+	var mario8: Dictionary = by_title.get("Mario Party 8 (USA, Asia) (Rev 2)", {})
+	var mario8_cands: Array = plugin._art_candidates(mario8)
+	var mario8_file: String = str(mario8_cands[0]["file"]) if mario8_cands.size() > 0 else ""
+	_check(mario8_file == "c00d84a2-345e-428c-a705-18c8b859710c.png", "strict: (USA, Asia) stands for North America, got %s" % mario8_file)
+	LinuxPlugin.set_label_region("")
+	var fzmax_loose: Array = plugin._art_candidates(fzmax)
+	var fzmax_loose_file: String = str(fzmax_loose[0]["file"]) if fzmax_loose.size() > 0 else ""
+	_check(fzmax_loose_file == "5fbd2541-cd5f-43ea-a75a-272392dde937.png", "no flag: the first region's file (Europe), got %s" % fzmax_loose_file)
+	# A revision tag is not a region: `(Evolution)` stands off, the region is `(USA)`.
+	LinuxPlugin.set_label_region("strict")
+	var nexus: Dictionary = by_title.get("Armored Core - Nexus (USA) (Disc 1)", {})
+	var nexus_cands: Array = plugin._art_candidates(nexus)
+	var nexus_file: String = str(nexus_cands[0]["file"]) if nexus_cands.size() > 0 else ""
+	_check(nexus_file == "aeef04b6-fd7d-45d6-8c1f-95f78b30df9b.png", "strict: the revision tag is not the region, got %s" % nexus_file)
+	LinuxPlugin.set_label_region("")
+	var nexus_loose: Array = plugin._art_candidates(nexus)
+	var nexus_loose_file: String = str(nexus_loose[0]["file"]) if nexus_loose.size() > 0 else ""
+	_check(nexus_loose_file == "aeef04b6-fd7d-45d6-8c1f-95f78b30df9b.png", "no flag: the first region's file, got %s" % nexus_loose_file)
+	# A scene file name (`Halo 3 [RF][ENG]`) matches no reference row, yet its label is found:
+	# the core title (its `[tag]` groups off) is the plain row the reference lists carry.
+	var halo: Dictionary = by_title.get("Halo 3 [RF][ENG]", {})
+	var halo_platform: String = str(halo.get("platform_id", ""))
+	_check(halo_platform == "xbox360", "the folder makes it a xbox360 game, got %s" % halo_platform)
+	var halo_identified: bool = halo.get("identified", false)
+	_check(not halo_identified, "Halo 3 [RF][ENG] stays unidentified (its name matches no reference row)")
+	var halo_cands: Array = plugin._art_candidates(halo)
+	var halo_file: String = str(halo_cands[0]["file"]) if halo_cands.size() > 0 else ""
+	_check(halo_file == "r2_733e1933-1b7b-431b-8413-1162d2ef7005.png", "no flag: the scene name finds the plain row's first region (Europe), got %s" % halo_file)
+	# A scene file name whose title the reference lists punctuate differently (`Punch-Out!`
+	# here, `Punch-Out!!` in the art index) matches no reference row, yet its label is found:
+	# the normalizer cuts the exclamation too, so the core title stands for both spellings.
+	var punch: Dictionary = by_title.get("Punch-Out! [R7PE01]", {})
+	var punch_platform: String = str(punch.get("platform_id", ""))
+	_check(punch_platform == "wii", "the folder makes it a wii game, got %s" % punch_platform)
+	var punch_identified: bool = punch.get("identified", false)
+	_check(not punch_identified, "Punch-Out! [R7PE01] stays unidentified (its name matches no reference row)")
+	var punch_cands: Array = plugin._art_candidates(punch)
+	var punch_file: String = str(punch_cands[0]["file"]) if punch_cands.size() > 0 else ""
+	_check(punch_file == "a951c3f7-1261-4059-842e-d379fe042c19.png", "no flag: the exclamation-punctuated scene name finds the plain row's first region (Europe), got %s" % punch_file)
+
+	# -- screenscraper --------------------------------------------------------
+	# The table under the app lists the release by its name, the key's file turns the
+	# source on, and its answers classify as they come: the image's bytes, the absences,
+	# and the refusals, the quota's and the back-off's waits.
+	var ss_key := ProjectSettings.globalize_path("user://ss_key_smoke.json")
+	var ss_key_file := FileAccess.open(ss_key, FileAccess.WRITE)
+	ss_key_file.store_string("{\"devid\": \"smoke\", \"devpassword\": \"smoke-pass\", \"softname\": \"CartoucheSmoke\"}")
+	ss_key_file.close()
+	plugin._ss.set_key_path(ss_key)
+	_check(plugin._ss.enabled(), "screenscraper: the key's file enables the source")
+	var tetris_cands: Array = plugin._art_candidates(tetris)
+	var ss_cand: Dictionary = {}
+	for c: Dictionary in tetris_cands:
+		if str(c["source"]) == "screenscraper":
+			ss_cand = c
+	_check(not ss_cand.is_empty(), "screenscraper: the table-listed release gets its candidate")
+	if not ss_cand.is_empty():
+		_check("jeuid=1291" in str(ss_cand["url"]), "screenscraper: the request's game is the table's")
+		_check("systemeid=3" in str(ss_cand["url"]), "screenscraper: the request's system is the profile's")
+		_check("media=support-texture(us)" in str(ss_cand["url"]), "screenscraper: the texture is the region's")
+	# The order: ScreenScraper's first (the key's file on), then LaunchBox's; and the
+	# flag's one, alone.
+	if tetris_cands.size() > 0:
+		_check(str(tetris_cands[0]["source"]) == "screenscraper", "the order: ScreenScraper's is first (the key's file on)")
+	LinuxPlugin.set_label_source("launchbox")
+	var tetris_lb: Array = plugin._art_candidates(tetris)
+	var tetris_lb_only: bool = not tetris_lb.is_empty()
+	for c: Dictionary in tetris_lb:
+		if str(c["source"]) != "launchbox":
+			tetris_lb_only = false
+	_check(tetris_lb_only, "--label-source=launchbox: only LaunchBox's")
+	LinuxPlugin.set_label_source("screenscraper")
+	var tetris_ss: Array = plugin._art_candidates(tetris)
+	var tetris_ss_only: bool = not tetris_ss.is_empty()
+	for c: Dictionary in tetris_ss:
+		if str(c["source"]) != "screenscraper":
+			tetris_ss_only = false
+	_check(tetris_ss_only, "--label-source=screenscraper: only ScreenScraper's")
+	LinuxPlugin.set_label_source("psxdatacenter")
+	_check(plugin._art_candidates(tetris).is_empty(), "--label-source=psxdatacenter: the non-serial game's, none")
+	LinuxPlugin.set_label_source("")
+	# The absence's note: the run's kept, the request's not asked again, the rest's sources
+	# not its.
+	plugin._ss.note_no_media(str(ss_cand.get("no_media_key", "")))
+	var tetris_noted: Array = plugin._art_candidates(tetris)
+	var tetris_noted_ss: bool = false
+	var tetris_noted_lb: bool = false
+	for c: Dictionary in tetris_noted:
+		if str(c["source"]) == "screenscraper":
+			tetris_noted_ss = true
+		if str(c["source"]) == "launchbox":
+			tetris_noted_lb = true
+	_check(not tetris_noted_ss, "screenscraper: the absence's note, the candidate's off for the run")
+	_check(tetris_noted_lb, "screenscraper: the note's its source's only, LaunchBox's the rest")
+	var ss_nomedia := ScreenScraper.new()
+	ss_nomedia.set_key_path(ss_key)
+	_check(ss_nomedia.answer(200, "NOMEDIA".to_utf8_buffer()) == "nomedia", "screenscraper: NOMEDIA is the absence")
+	var ss_refused := ScreenScraper.new()
+	ss_refused.set_key_path(ss_key)
+	_check(ss_refused.answer(200, "Erreur de login : Vérifier vos identifiants développeur !".to_utf8_buffer()) == "refused", "screenscraper: the wrong key is the refusal")
+	_check(not ss_refused.open(), "screenscraper: a refused key is off for the run")
+	var ss_throttled := ScreenScraper.new()
+	ss_throttled.set_key_path(ss_key)
+	_check(ss_throttled.answer(429, PackedByteArray()) == "throttled", "screenscraper: the 429's answer")
+	_check(not ss_throttled.admit(), "screenscraper: the 429's back-off waits")
+	var ss_closed := ScreenScraper.new()
+	ss_closed.set_key_path(ss_key)
+	_check(ss_closed.answer(430, PackedByteArray()) == "closed", "screenscraper: the 430's answer")
+	_check(not ss_closed.open(), "screenscraper: the spent quota closes the day")
+	var ss_image := ScreenScraper.new()
+	ss_image.set_key_path(ss_key)
+	_check(ss_image.answer(200, PackedByteArray([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) == "image", "screenscraper: the image's bytes are its image")
+	plugin._ss.reset()
+	_check(not plugin._ss.enabled(), "screenscraper: without the key's file, the source is off")
+	DirAccess.remove_absolute(ss_key)
+
+	# -- the rehearsal: nothing starts, the report is printed -------------------
+	var result: Dictionary = JSON.parse_string(plugin.launchGame(2, {"game_id": str(tetris.get("id", "")), "disc": 0}))
+	var result_code: String = str(result.get("code", ""))
+	_check(result_code == "linux_printed", "launch rehearsed (linux_printed), got %s" % result_code)
+	plugin.launchGame(3, {"game_id": str(smw.get("id", "")), "disc": 0})
+	plugin.launchGame(4, {"game_id": str(smb.get("id", "")), "disc": 0})
+	plugin.launchGame(5, {"game_id": str(ffx.get("id", "")), "disc": 0})
+	plugin.launchGame(6, {"game_id": str(ffx7.get("id", "")), "disc": 0})
+	_check(reports.size() == 5, "five launch reports emitted, got %d" % reports.size())
+	if reports.size() == 5:
+		var r_tetris: Dictionary = reports[0]
+		var tetris_crc: String = str(r_tetris.get("crc32", ""))
+		_check(tetris_crc == "1394F57E", "Tetris rehearsal print 1394F57E, got %s" % tetris_crc)
+		var tetris_file: String = str(r_tetris.get("file", ""))
+		_check(tetris_file.ends_with("Tetris (USA).nes"), "Tetris rehearsal names its file")
+		var r_smw: Dictionary = reports[1]
+		var smw_crc: String = str(r_smw.get("crc32", ""))
+		_check(smw_crc == "B19ED489", "S.M.World rehearsal print B19ED489, got %s" % smw_crc)
+		var r_smb: Dictionary = reports[2]
+		var smb_crc: String = str(r_smb.get("crc32", ""))
+		_check(smb_crc == "393A432F", "the zip's rehearsal print is what its archive records, got %s" % smb_crc)
+		var r_ffx: Dictionary = reports[3]
+		var r_ffx_serials: Array = r_ffx.get("serials", [])
+		_check("SLPM_661.24" in r_ffx_serials, "FFX rehearsal carries the serial")
+		var chd: Variant = r_ffx.get("chd")
+		if chd is Dictionary:
+			var chd_data: Dictionary = chd
+			var chd_version: int = chd_data.get("version", -1)
+			var chd_hunks: int = chd_data.get("hunks", -1)
+			var chd_hunk_size: int = chd_data.get("hunk_size", -1)
+			var chd_logical: int = chd_data.get("logical", -1)
+			var chd_first: int = chd_data.get("first_hunk", -1)
+			_check(chd_version == 5, "FFX rehearsal carries the chd version")
+			_check(chd_hunks == 16, "FFX rehearsal carries the chd hunks")
+			_check(chd_hunk_size == 1048576, "FFX rehearsal carries the chd hunk size")
+			_check(chd_logical == 16777216, "FFX rehearsal carries the chd logical size")
+			_check(chd_first == 182, "FFX rehearsal carries the chd first hunk")
+		else:
+			_check(false, "FFX rehearsal carries a chd header")
+		var r_ffx7: Dictionary = reports[4]
+		var r_ffx7_serials: Array = r_ffx7.get("serials", [])
+		_check("SCES_008.67" in r_ffx7_serials, "FFVII rehearsal carries the serial")
+
+	print("== failures: %d ==" % _failures)
+	get_tree().quit(_failures)
+
+
+func _check(cond: bool, msg: String) -> void:
+	if cond:
+		print("  ok   %s" % msg)
+	else:
+		print("  FAIL %s" % msg)
+		_failures += 1

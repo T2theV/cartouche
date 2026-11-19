@@ -106,6 +106,21 @@ func test_an_unreadable_image_or_none_at_all_gives_no_texture_and_the_carousel_g
 	assert_bool(_art.has_texture(games[1])).is_false()
 
 
+## A source's JPEG stored under a `.png` name still reads: its format is its bytes, not its name.
+func test_a_jpeg_stored_under_a_png_name_reads_as_a_texture() -> void:
+	var game := Fixtures.games(1)[0]
+	var path := ProjectSettings.globalize_path(FOLDER.path_join("mislabeled.png"))
+	var jpeg := Image.create(80, 80, false, Image.FORMAT_RGB8).save_jpg_to_buffer()
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_buffer(jpeg)
+	file.close()
+	_art.add(AndroidServices.Art.new({"game_id": game.id, "path": path}))
+	_art.request(game)
+	await _settled()
+	assert_bool(_art.has_texture(game)).is_true()
+	assert_that(_art.texture(game).get_size()).is_equal(Vector2(80, 80))
+
+
 func test_labels_arriving_together_reach_the_gpu_one_a_frame_and_only_the_latest_are_kept() -> void:
 	var games := Fixtures.games(30)
 	_art.loaded.connect(func(_id: String) -> void: _made += 1)
