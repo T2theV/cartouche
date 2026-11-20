@@ -220,12 +220,6 @@
                 "coming": false
             },
             {
-                "id": "ps3",
-                "model": "PlayStation 3",
-                "maker": "Sony",
-                "coming": false
-            },
-            {
                 "id": "psvita",
                 "model": "PS Vita",
                 "maker": "Sony",
