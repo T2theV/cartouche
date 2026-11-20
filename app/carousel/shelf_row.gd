@@ -105,7 +105,8 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
 		for place in _places:
 			place.hide_view()
-	elif what == NOTIFICATION_APPLICATION_PAUSED:
+	# The app left for the emulator: Android paused it, the desktop lost focus to it.
+	elif what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
 		# The game launched kept its view's pictures for its way back: away, they go.
 		if _stand.mode == SelectedStand.Mode.OUTSIDE and _selected_place():
 			_selected_place().hide_view()

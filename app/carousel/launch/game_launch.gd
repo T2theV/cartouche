@@ -7,8 +7,9 @@ extends Node
 ## for a game that cannot start. While [method is_busy], the carousel ignores every input.
 ##
 ## Everything moves with the time [method _process] is given, so tests can step through a launch.
-## Android pauses the app as the emulator shows and resumes it as the user comes back, before or
-## after the start is answered: the stages keep track of both.
+## The app leaves for the emulator and comes back as the user does, before or after the start is
+## answered: the stages keep track of both. Android pauses it as it leaves and resumes it on the
+## way back; the desktop only loses and gains focus to it.
 
 ## The launch failed, before the insertion or at its end; [param code] is the plugin's error code,
 ## or `timeout` when it never answered.
@@ -73,13 +74,15 @@ func _ready() -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_PAUSED:
+	# Both leave for the emulator: Android pauses the app, the desktop loses focus to it.
+	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
 		match _stage:
 			Stage.STARTING:
 				_enter(Stage.STARTING_LEFT)
 			Stage.AWAY:
 				_enter(Stage.AWAY_LEFT)
-	elif what == NOTIFICATION_APPLICATION_RESUMED:
+	# Both come back: Android resumes the app, the desktop gains its focus.
+	elif what in [NOTIFICATION_APPLICATION_RESUMED, NOTIFICATION_APPLICATION_FOCUS_IN]:
 		match _stage:
 			Stage.STARTING_LEFT:
 				_enter(Stage.STARTING_BACK)

@@ -68,8 +68,8 @@ func _ready() -> void:
 
 
 func _notification(what: int) -> void:
-	# A direction let go meanwhile never reaches the app.
-	if what == NOTIFICATION_APPLICATION_PAUSED:
+	# A direction let go meanwhile never reaches the app: it paused, or the desktop lost focus to it.
+	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
 		_let_go()
 
 

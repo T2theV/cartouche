@@ -329,7 +329,8 @@ func _ready() -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_PAUSED:
+	# Both leave for the emulator: Android paused the app, the desktop lost focus to it.
+	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
 		_toss.finish()
 		_let_go()
 		_remember()
@@ -338,7 +339,8 @@ func _notification(what: int) -> void:
 		_direction.let_go()
 		_ways.let_go()
 		_add_ball.close(false)
-	elif what == NOTIFICATION_APPLICATION_RESUMED:
+	# Both come back: Android resumed the app, the desktop gained its focus.
+	elif what in [NOTIFICATION_APPLICATION_RESUMED, NOTIFICATION_APPLICATION_FOCUS_IN]:
 		# Where the system tells no change of its theme, it is read again on the way back.
 		_follow_system_theme()
 		# Games may have been copied into the folders meanwhile, or deleted. The first comes before the carousel is set up,

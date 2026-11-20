@@ -224,6 +224,42 @@ func _assert_waited(outcome: Outcome, stages: Array[GameLaunch.Stage], waited_s:
 			assert_float(waited_s).is_greater_equal(WAIT_S - LONGEST_FRAME_S)
 
 
+## The desktop leaves for the emulator and comes back losing and gaining focus: the stage machine
+## goes to its _LEFT stage and stays black there, past the wait a stage that never left would give
+## up, until the user comes back — never timing the emulator out as Android's pause would.
+func test_the_desktop_leaves_for_the_emulator_on_focus_out_and_comes_back_on_focus_in() -> void:
+	var carousel := await _carousel()
+	var launch := carousel._game_launch
+	var android: Fixtures.FakeAndroid = auto_free(Fixtures.FakeAndroid.new())
+	launch.android = android
+	var as_it_was := _presence(launch)
+	carousel._unhandled_input(Fixtures.button(&"ui_accept", true))
+	# The game has started and the screen is black: the app waits for the emulator to show.
+	for frame in 5000:
+		if launch._stage == GameLaunch.Stage.AWAY:
+			break
+		Fixtures.step_frame(carousel)
+	assert_int(launch._stage).is_equal(GameLaunch.Stage.AWAY)
+	# The emulator shows and takes the focus: the app leaves for it and keeps the screen black.
+	launch.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	assert_int(launch._stage).is_equal(GameLaunch.Stage.AWAY_LEFT)
+	# No _process of AWAY_LEFT ever gives up: a whole wait of frames more keeps the black, whereas
+	# the AWAY stage would have shown the carousel past WAIT_S.
+	for frame in int(WAIT_S * 60.0) * 2:
+		Fixtures.step_frame(carousel)
+	assert_int(launch._stage).is_equal(GameLaunch.Stage.AWAY_LEFT)
+	_assert_black(launch)
+	# The user comes back to the app: the carousel shows again as it was.
+	launch.notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
+	assert_int(launch._stage).is_equal(GameLaunch.Stage.SHOWING)
+	for frame in 1000:
+		if not launch.is_busy():
+			break
+		Fixtures.step_frame(carousel)
+	assert_bool(launch.is_busy()).is_false()
+	_assert_as_before_the_launch(carousel, as_it_was)
+
+
 func test_a_game_goes_into_its_console_from_as_far_as_its_own_medium_is_long() -> void:
 	# Cartridges slid in, the NES as if it had no steps of its own: a Famicom cartridge, shorter, comes
 	# from nearer than an NES one.
